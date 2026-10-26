@@ -1,0 +1,5 @@
+region,orders,revenue,revenue_rank
+east,1250,63625.00,3
+north,1250,63875.00,1
+south,1250,63500.00,4
+west,1250,63750.00,2

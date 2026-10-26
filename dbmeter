@@ -1,0 +1,2 @@
+#!/bin/sh
+exec java $DBMETER_OPTS -jar "$(dirname "$0")/build/dbmeter.jar" "$@"

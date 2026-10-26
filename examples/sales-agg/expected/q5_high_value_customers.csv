@@ -1,0 +1,5 @@
+segment,customers,sales,max_total_cents,avg_total_cents
+Consumer,5948,595022,2364570,2050417.00
+Corporate,5995,599729,2369949,2050229.90
+Home Office,5959,596138,2383973,2050123.70
+Small Business,5964,596631,2391319,2051367.96
