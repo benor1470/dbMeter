@@ -33,7 +33,7 @@ Handoff for the next session. README.md has the tool reference; this file has th
 
 - **dbMeter** (Java 11, no deps) works: `info`, `check`, `load`, `merge`, `compare`. Build: `./build.ps1`
   → `build/dbmeter.jar` (+ `build/irdb-jdbc.jar` when `drivers/jirdb-*.jar` is present).
-- **Not a git repo yet** (`git init` not run). `.gitignore` already covers `build/`, `reports/`, `drivers/*.jar`, `tools/`.
+- Git repo: https://github.com/benor1470/dbMeter (private, branch `main`). `.gitignore` covers `build/`, `reports/`, `drivers/*`, `tools/`.
 - Servers were **shut down** at the end of the session (PostgreSQL service left running, it was already running).
 
 ## Databases and how to start them
@@ -81,6 +81,6 @@ alias `month` comes back as `m`.
 - Share/send the report; optionally open a GitHub issue on SB0LTD/ramsql (ask the user first).
 - Add the isolated per-query 512-row runs to `run_all.ps1` so the report's chart is reproducible in one command.
 - Re-test when RAMSQL ships aggregates or a larger row capacity (rerun `examples/sales-agg` + `size-scaling`).
-- `git init` and first commit if the user wants version control.
+
 - dbMeter ideas not done: publish metrics to a DB table for multi-machine runs (today: shared folder + `merge`),
   CSV-driven data load command for RAMSQL (today: generated single-row INSERT scripts).
