@@ -32,6 +32,7 @@ class GateContracts(unittest.TestCase):
                     count = 1000 if engine == 'ramsql' else 200
                     latency = 16 if engine == 'ramsql' else 24
                     raw = dict(dbmeterReport=1, measuredStart=100000, measuredEnd=160000,
+                               database=dict(label=engine),
                                nodes=[dict(settings=dict(threads=clients, duration='PT1M', warmup='PT15S', rampUp='PT5S'))],
                                scenarios={name: dict(count=count, errors=0, latencyMicros=dict(subBits=5, count=count, min=latency, max=latency, buckets={str(latency): count})) for name in evidence.MIXED['sales-subset']})
                     name = f'{engine}-{clients}-{trial}.json'
@@ -80,6 +81,20 @@ class GateContracts(unittest.TestCase):
     def test_wrong_client_count_blocks_claim(self):
         self.mutate_raw(lambda raw: raw['nodes'][0]['settings'].update(threads=99))
         self.assertFalse(self.result()['qualified'])
+
+    def test_wrong_engine_label_blocks_claim(self):
+        self.mutate_raw(lambda raw: raw['database'].update(label='postgres'))
+        self.assertFalse(self.result()['qualified'])
+
+    def test_overlapping_trial_ranges_block_claim(self):
+        run = self.campaign['runs'][0]
+        path = self.folder / run['report']
+        raw = json.loads(path.read_text())
+        raw['measuredEnd'] = 700000
+        path.write_text(json.dumps(raw))
+        result = self.result()
+        self.assertTrue(any(row.get('ratio_to_fastest', 0) >= 2 for row in result['rows']))
+        self.assertFalse(result['qualified'])
 
     def test_short_window_blocks_claim(self):
         self.mutate_raw(lambda raw: raw.update(measuredEnd=100001))

@@ -68,6 +68,8 @@ def read_run(folder, campaign, run):
     clients = int(clients)
     if raw.get('dbmeterReport') != 1 or len(raw['nodes']) != 1:
         raise ValueError('Expected one unmerged original dbMeter node')
+    if raw['database']['label'] != run['engine']:
+        raise ValueError('Actual JDBC report engine label differs from scheduled engine')
     settings = raw['nodes'][0]['settings']
     policy = PROFILES[campaign['profile']]
     expected = dict(threads=clients, duration='PT1M' if policy['duration'] == '60s' else 'PT3S',
@@ -165,7 +167,7 @@ def summarize(folder):
 def markdown(summary):
     lines = [f"## Live {summary['suite']} — {summary['profile']}", '',
              '**QUALIFIED significant advantage**' if summary['qualified'] else '**NOT QUALIFIED — keep the PR unmerged; no README performance claim.**', '',
-             'All rates are queries/transactions per second at the original JDBC boundary. Bold ratios highlight measured wins, including limited wins that do not pass the full gate.', '',
+             'All rates are queries/transactions per second at the original JDBC boundary. Bold ratios highlight at least 2× measured leads, including limited leads that do not pass the full gate.', '',
              '| Workload / clients | RAMSQL | PostgreSQL | IRDB | RAMSQL / fastest reference |',
              '| --- | ---: | ---: | ---: | ---: |']
     for row in summary['rows']:
@@ -174,7 +176,7 @@ def markdown(summary):
             stats = row['engines'].get(engine)
             cells.append(f"{stats['median_qps']:,.2f}" if stats else 'not scored')
         ratio = row.get('ratio_to_fastest')
-        cells.append(('**' if ratio >= 1 else '') + f'{ratio:.2f}×' + ('**' if ratio >= 1 else '') if ratio is not None else 'unqualified')
+        cells.append(('**' if ratio >= MIN_RATIO else '') + f'{ratio:.2f}×' + ('**' if ratio >= MIN_RATIO else '') if ratio is not None else 'unqualified')
         lines.append('| ' + ' | '.join(cells) + ' |')
     lines += ['', 'Gate: all original checks, all declared cases, all three engines, three 60-second trials; at least 2× the faster reference in each case, separated trial ranges, and median p99 no more than 10% worse than either reference. Smoke results never qualify.', '']
     if summary['issues']:

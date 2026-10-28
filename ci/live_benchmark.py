@@ -88,7 +88,12 @@ class Campaign:
         self.out.mkdir(parents=True, exist_ok=False)
         self.work = RUNTIME / suite
         self.work.mkdir(parents=True, exist_ok=False)
-        self.port = {engine: free_port() for engine in ENGINES}
+        self.port = {}
+        for engine in ENGINES:
+            port = free_port()
+            while port in self.port.values():
+                port = free_port()
+            self.port[engine] = port
         self.container = 'dbmeter-' + uuid.uuid4().hex[:12]
         self.pg_created = False
         self.binary = RUNTIME / 'downloaded-ramsql/ramsql/bin/ramsql'
@@ -140,14 +145,18 @@ class Campaign:
             try:
                 wait_port(self.port[engine])
                 # A listening socket can precede the final PostgreSQL startup.
-                for attempt in range(100):
-                    if subprocess.run(['docker', 'exec', self.container, 'pg_isready', '-U', 'postgres'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+                # Bootstrap's temporary postmaster accepts Unix sockets only.
+                # Require TCP, matching JDBC, before declaring the engine ready.
+                for attempt in range(600):
+                    if subprocess.run(['docker', 'exec', self.container, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
                         break
                     time.sleep(.1)
                 else:
                     raise RuntimeError('PostgreSQL did not finish initialization')
                 yield
             finally:
+                with (self.out / 'postgres-server.log').open('ab') as log:
+                    subprocess.run(['docker', 'logs', self.container], stdout=log, stderr=subprocess.STDOUT, check=True)
                 subprocess.run(['docker', 'stop', '-t', '30', self.container], check=True, stdout=subprocess.DEVNULL)
         else:
             if engine == 'ramsql':
