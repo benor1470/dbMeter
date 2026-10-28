@@ -3,7 +3,7 @@ name: Live RAMSQL comparison
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
-    paths: ['.github/workflows/ramsql-live-benchmarks.yml', 'ci/**']
+    paths: ['.github/workflows/ramsql-live-benchmarks.yml', 'ci/**', '!ci/README.md']
   workflow_dispatch:
     inputs:
       qualification:
