@@ -85,8 +85,13 @@ def read_run(folder, campaign, run):
     if set(raw['scenarios']) != expected_scenarios:
         raise ValueError('Workload scenarios were dropped or substituted')
     values = list(raw['scenarios'].values())
-    if any(value['errors'] or value['count'] <= 0 or value['latencyMicros']['count'] != value['count'] for value in values):
-        raise ValueError('SQL errors, empty scenario or inconsistent histogram')
+    for name, value in raw['scenarios'].items():
+        if value['errors']:
+            raise ValueError(f'Measured SQL errors in {name}: {value["errors"]}')
+        if value['count'] <= 0:
+            raise ValueError('No successful execution of declared scenario ' + name)
+        if value['latencyMicros']['count'] != value['count']:
+            raise ValueError('Inconsistent latency histogram in ' + name)
     return dict(qps=sum(value['count'] for value in values) / seconds,
                 p99_us=percentile([value['latencyMicros'] for value in values], 99))
 

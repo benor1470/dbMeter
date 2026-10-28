@@ -162,8 +162,10 @@ class Campaign:
         if engine == 'postgres':
             if not self.pg_created:
                 subprocess.run(['docker', 'create', '--name', self.container,
-                                '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', '-p', f'127.0.0.1:{self.port[engine]}:5432',
-                                VERSIONS['postgres_image']], check=True, stdout=subprocess.DEVNULL)
+                                '--network', 'host', '-e', 'POSTGRES_HOST_AUTH_METHOD=trust',
+                                '-e', f'PGPORT={self.port[engine]}', VERSIONS['postgres_image'],
+                                'postgres', '-c', f'port={self.port[engine]}', '-c', 'listen_addresses=127.0.0.1'],
+                               check=True, stdout=subprocess.DEVNULL)
                 self.pg_created = True
             subprocess.run(['docker', 'start', self.container], check=True, stdout=subprocess.DEVNULL)
             try:
@@ -194,6 +196,13 @@ class Campaign:
                         '--table-rows', ','.join(map(str, banks)), '--table-versions', ','.join(map(str, versions)),
                         '--work-rows', '4096' if self.suite == 'size-scaling' else '65536', '--result-rows', '2048']
                 self.report['ramsql_server_arguments'] = argv[1:]
+                capacity_flags = ('--workers', '--max-clients', '--table-rows', '--table-versions', '--work-rows', '--result-rows')
+                probe = [str(self.binary), '--machine-capacity']
+                for flag in capacity_flags:
+                    index = argv.index(flag)
+                    probe += argv[index:index + 2]
+                self.report['ramsql_machine_capacity'] = json.loads(subprocess.check_output(probe, text=True, timeout=30))
+                self.save()
             else:
                 server = next((RUNTIME / 'irdb').rglob('irdbServerConsole.dll'))
                 ini = self.work / 'irdb.ini'
@@ -322,29 +331,36 @@ class Campaign:
         # Setup may have two databases resident; no timing occurs until both
         # stop. During timed runs only the selected engine is active.
         for engine in ('irdb', 'ramsql'):
-            if engine == 'ramsql' and self.suite == 'sales-full' and self.report['environment']['memory_total_bytes'] < 12 * 1024**3:
+            try:
+                self.check_engine(engine)
+            except RuntimeError:
+                log = self.out / 'ramsql-server.log'
+                capacity = engine == 'ramsql' and log.exists() and any(
+                    message in log.read_text(errors='replace') for message in ('error: BudgetExceeded', 'error: MemoryReservationFailed'))
+                if not capacity:
+                    raise
                 self.report['checks'][engine] = False
-                self.report['gaps'].append('Full 5M default-text RAMSQL capacity requires a larger runner; no sample data or smaller build substituted')
-                continue
-            with self.running(engine):
-                if engine == 'ramsql':
-                    for source in self.data_files:
-                        self.psql(source)
-                passed = self.command(engine + '-checks', self.java('check', engine, ['--junit', str(self.out / (engine + '-checks.xml'))])) == 0
-                self.report['checks'][engine] = passed
-                if not passed:
-                    self.report['gaps'].append(engine + ' failed original full-suite correctness; no throughput scored for this suite')
-                if engine == 'ramsql' and self.suite == 'size-scaling':
-                    probes = [line.split('.', 2)[1] for line in (self.folder / 'ramsql.properties').read_text().splitlines() if line.startswith('check.cap_') and '.sql=' in line]
-                    # Preserve the reviewer's 200-byte text/9-column/20-table
-                    # probes as explicit merge blockers. Run them only in the
-                    # unscored setup instance, never silently disable them.
-                    argv = ['java', '-Xms32m', '-Xmx256m', '-jar', str(ROOT / 'build/dbmeter.jar'), 'check', '--skip-setup', '-c', str(self.configs[engine]), '--only', ','.join(probes), '--junit', str(self.out / 'ramsql-capabilities.xml')]
-                    self.report['ramsql_capability_probes_passed'] = self.command('ramsql-capabilities', argv) == 0
-                    if not self.report['ramsql_capability_probes_passed']:
-                        self.report['gaps'].append('Original RAMSQL text/column/table capability probes failed; valid read timings do not close those gaps')
+                self.report['gaps'].append('RAMSQL native capacity admission rejected the actual runner/banks; no fixed RAM threshold, sample data or smaller build substituted. See machine budget and server log.')
         self.report['original_input_sha256'] = original_inputs()
         self.save()
+
+    def check_engine(self, engine):
+        with self.running(engine):
+            if engine == 'ramsql':
+                for source in self.data_files:
+                    self.psql(source)
+            passed = self.command(engine + '-checks', self.java('check', engine, ['--junit', str(self.out / (engine + '-checks.xml'))])) == 0
+            self.report['checks'][engine] = passed
+            if not passed:
+                self.report['gaps'].append(engine + ' failed original full-suite correctness; no throughput scored for this suite')
+            if engine == 'ramsql' and self.suite == 'size-scaling':
+                probes = [line.split('.', 2)[1] for line in (self.folder / 'ramsql.properties').read_text().splitlines() if line.startswith('check.cap_') and '.sql=' in line]
+                # The original capability probes remain explicit merge
+                # blockers. Only the unscored setup instance runs them.
+                argv = ['java', '-Xms32m', '-Xmx256m', '-jar', str(ROOT / 'build/dbmeter.jar'), 'check', '--skip-setup', '-c', str(self.configs[engine]), '--only', ','.join(probes), '--junit', str(self.out / 'ramsql-capabilities.xml')]
+                self.report['ramsql_capability_probes_passed'] = self.command('ramsql-capabilities', argv) == 0
+                if not self.report['ramsql_capability_probes_passed']:
+                    self.report['gaps'].append('Original RAMSQL text/column/table capability probes failed; valid read timings do not close those gaps')
 
     def run(self):
         generator = self.folder / ('gen_expected.py' if self.suite == 'sales-full' else 'gen.py')

@@ -62,13 +62,19 @@ Setup and correctness may have two services resident for data transfer. Every
 server stops before timing. Timed cases run with **one database engine active**;
 RAMSQL uses the runner's available CPU affinity, up to its eight configured
 workers, and both references retain their normal engine settings. RAMSQL's
+PostgreSQL uses Docker **host networking**, not a bridge/forwarded port: all
+three JDBC connections traverse the same host-loopback boundary. Earlier setup
+debug runs using a forwarded port are not qualifying performance evidence.
+RAMSQL's
 default text layout is used; no narrower binary is substituted to fit CI.
 These are memory-resident read comparisons, not a durable-write benchmark.
 
 Default private GitHub runners have 8 GB RAM. Full default-layout RAMSQL data
-qualification needs a larger Linux machine: set repository variable
-`RAMSQL_BENCHMARK_RUNNER` to an existing suitable runner label. Below 12 GB RAM,
-the full RAMSQL case is reported as a capacity gap; the dataset is never shrunk.
+qualification currently needs a larger Linux machine: set repository variable
+`RAMSQL_BENCHMARK_RUNNER` to an existing suitable runner label. The workflow uses
+RAMSQL's actual native capacity admission, captures its machine budget and
+reports rejected reservations as gaps; it imposes no fixed RAM-size threshold.
+The dataset is never shrunk.
 This prevents a small hosted-runner screen from being presented as 5M/100M
 production qualification. See [GitHub runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 
