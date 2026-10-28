@@ -1,0 +1,122 @@
+name: Live RAMSQL comparison
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths: ['.github/workflows/ramsql-live-benchmarks.yml', 'ci/**']
+  workflow_dispatch:
+    inputs:
+      qualification:
+        description: 'Three original-duration trials; required before any performance claim'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-dbmeter-${{ github.ref }}-${{ github.event.action }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test the evidence gate, including false-green cases
+        run: python -m unittest discover -s ci -p 'test_*.py' -v
+      - name: Build pinned allocator-free RAMSQL
+        run: python ci/bootstrap.py ramsql
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ramsql-benchmark-binary
+          path: |
+            .ci-runtime/ramsql/bin/ramsql
+            .ci-runtime/ramsql-provenance.json
+          retention-days: 14
+
+  benchmark:
+    needs: build
+    # Set this variable to an existing larger Linux runner label for full-data
+    # qualification. Never silently downsize the reviewer's dataset to fit CI.
+    runs-on: ${{ vars.RAMSQL_BENCHMARK_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [size-scaling, sales-subset, sales-full]
+    env:
+      BENCHMARK_PROFILE: ${{ (inputs.qualification || contains(github.event.pull_request.labels.*.name, 'benchmark:qualify')) && 'qualification' || 'smoke' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ramsql-benchmark-binary
+          path: .ci-runtime/downloaded-ramsql
+      - name: Restore the supplied private IRDB Java client
+        env:
+          IRDB_JDBC_PART_1: ${{ secrets.IRDB_JDBC_PART_1 }}
+          IRDB_JDBC_PART_2: ${{ secrets.IRDB_JDBC_PART_2 }}
+          IRDB_JDBC_PART_3: ${{ secrets.IRDB_JDBC_PART_3 }}
+          IRDB_JDBC_PART_4: ${{ secrets.IRDB_JDBC_PART_4 }}
+          IRDB_JDBC_PART_5: ${{ secrets.IRDB_JDBC_PART_5 }}
+        run: python ci/bootstrap.py dependencies
+      - name: Build the unchanged dbMeter and IRDB adapter
+        run: sh build.sh
+      - name: Live original JDBC checks and isolated comparisons
+        env:
+          BENCHMARK_SUITE: ${{ matrix.suite }}
+        run: python ci/live_benchmark.py --suite "$BENCHMARK_SUITE" --profile "$BENCHMARK_PROFILE"
+      - name: Always publish the complete comparison, including losses and gaps
+        if: always()
+        run: python ci/evidence.py suite --suite '${{ matrix.suite }}'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-${{ matrix.suite }}
+          path: reports/live/${{ matrix.suite }}/
+          if-no-files-found: error
+          retention-days: 30
+
+  advantage:
+    name: Significant advantage required before merge
+    if: always()
+    needs: [build, benchmark]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: live-*
+          path: reports/collected
+      - name: Require full correctness and a repeated significant advantage
+        run: python ci/evidence.py gate --root reports/collected
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: advantage-decision
+          path: reports/advantage*
+          retention-days: 30
