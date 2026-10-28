@@ -43,12 +43,13 @@ def main():
         library = compiler.parent.parent / 'lib'
         checkout = next((RUNTIME / 'source').iterdir())
         env = dict(os.environ, SIG_LIB_DIR=str(library))
-        subprocess.run([str(compiler), 'build', '-Doptimize=ReleaseFast', '--prefix', str(RUNTIME / 'ramsql')], cwd=checkout, env=env, check=True)
+        build_arguments = ['build', '-Doptimize=ReleaseFast', '-Dlink-libc=true']
+        subprocess.run([str(compiler), *build_arguments, '--prefix', str(RUNTIME / 'ramsql')], cwd=checkout, env=env, check=True)
         binary = RUNTIME / 'ramsql/bin/ramsql'
         (RUNTIME / 'ramsql-provenance.json').write_text(json.dumps(dict(
             source=VERSIONS['ramsql'], toolchain=VERSIONS['sig'], binary_sha256=digest(binary),
             capabilities=json.loads(subprocess.check_output([str(binary), '--capabilities'])),
-            build_arguments=['build', '-Doptimize=ReleaseFast']), indent=2) + '\n')
+            build_arguments=build_arguments), indent=2) + '\n')
     elif sys.argv[1] == 'dependencies':
         drivers = ROOT / 'drivers'
         drivers.mkdir(exist_ok=True)
