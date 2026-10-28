@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 
 import evidence
 from bootstrap import VERSIONS
-from live_benchmark import PROFILES, ENGINES, cases
+from live_benchmark import PROFILES, ENGINES, cases, fresh_seed
 
 
 class GateContracts(unittest.TestCase):
@@ -152,6 +152,27 @@ class GateContracts(unittest.TestCase):
         histogram = dict(subBits=5, count=2, min=32, max=33, buckets={'32': 1, '33': 1})
         self.assertEqual(evidence.percentile([histogram], 50), 32)
         self.assertEqual(evidence.percentile([histogram], 99), 33)
+
+    def test_fresh_seed_omits_only_missing_table_prelude(self):
+        original = self.folder / 'input.sql'
+        target = self.folder / 'output.sql'
+        body = b"CREATE TABLE sales(id INT);\nINSERT INTO sales VALUES(1);\n"
+        original.write_bytes(b'-- original generator\nDROP TABLE sales;\n' + body)
+        self.assertEqual(fresh_seed(original, target), ['sales'])
+        self.assertEqual(target.read_bytes(), b'-- original generator\n' + body)
+        self.assertIn(b'DROP TABLE sales;', original.read_bytes())
+
+    def test_fresh_seed_rejects_drop_after_data(self):
+        original = self.folder / 'input.sql'
+        original.write_bytes(b'CREATE TABLE sales(id INT);\nDROP TABLE sales;\n')
+        with self.assertRaises(ValueError):
+            fresh_seed(original, self.folder / 'output.sql')
+
+    def test_fresh_seed_rejects_unrelated_drop(self):
+        original = self.folder / 'input.sql'
+        original.write_bytes(b'DROP TABLE application_data;\n')
+        with self.assertRaises(ValueError):
+            fresh_seed(original, self.folder / 'output.sql')
 
 
 if __name__ == '__main__':

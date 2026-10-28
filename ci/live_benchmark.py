@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import socket
 import subprocess
 import sys
@@ -78,6 +79,29 @@ def overlay(original, output, updates):
     lines += [key + '=' + value for key, value in updates.items()]
     output.write_text('\n'.join(lines) + '\n')
     return output
+
+
+def fresh_seed(original, target):
+    """Only omit unconditional DROP preludes for a provably fresh server.
+
+    Original examples intentionally continue after these missing-table errors.
+    Every CREATE/INSERT remains byte-for-byte and ON_ERROR_STOP stays enabled.
+    """
+    allowed = set(TABLES) | {f't_{size}' for size in SIZES}
+    omitted, preamble = [], True
+    with original.open('rb') as source, target.open('wb') as output:
+        for line in source:
+            match = re.fullmatch(rb'DROP TABLE ([a-z_0-9]+);\s*', line)
+            if match:
+                table = match[1].decode('ascii')
+                if not preamble or table not in allowed:
+                    raise ValueError('Unexpected DROP outside the known fresh-dataset prelude')
+                omitted.append(table)
+                continue
+            if line.strip() and not line.lstrip().startswith(b'--'):
+                preamble = False
+            output.write(line)
+    return omitted
 
 
 class Campaign:
@@ -219,9 +243,13 @@ class Campaign:
             self.configs[engine] = overlay(original, self.work / (engine + '.properties'), changes)
 
     def psql(self, source):
+        prepared = self.work / ('fresh-' + source.name)
+        omitted = fresh_seed(source, prepared)
+        self.report.setdefault('fresh_load_preludes', {})[source.name] = dict(
+            omitted_missing_table_drops=omitted, original_sha256=digest(source), transfer_sha256=digest(prepared))
         argv = ['docker', 'run', '--rm', '--network', 'host', '-i', '--entrypoint', 'psql', VERSIONS['postgres_image'],
                 '-h', '127.0.0.1', '-p', str(self.port['ramsql']), '-U', 'postgres', '-d', 'ramsql', '-q', '-v', 'ON_ERROR_STOP=1']
-        with source.open('rb') as stream:
+        with prepared.open('rb') as stream:
             if self.command('ramsql-seed-' + source.stem, argv, stdin=stream):
                 raise RuntimeError('Real SQL data transfer failed')
 

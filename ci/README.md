@@ -52,6 +52,11 @@ export/50-row SQL batches into RAMSQL. The full data transfer checks table count
 and retains hashes, not raw data. Full-suite IRDB uses the original dialect
 files. The subset's sole SQL adaptation removes `DATE` from two ISO literals for
 IRDB, matching its existing full-suite dialect; expected CSVs stay unchanged.
+The generated RAMSQL loaders begin with unconditional `DROP TABLE` statements
+that the examples normally continue past on an empty server. CI omits only that
+known missing-table prelude in an ephemeral transfer copy, records both hashes,
+and runs every unchanged CREATE/INSERT with `ON_ERROR_STOP` enabled. Original
+loaders are untouched; later/unrelated DROP statements are rejected.
 
 Setup and correctness may have two services resident for data transfer. Every
 server stops before timing. Timed cases run with **one database engine active**;
