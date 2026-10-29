@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: live-dbmeter-${{ github.ref }}-${{ github.event.action }}
+  group: live-dbmeter-${{ github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.event.action }}
   cancel-in-progress: false
 
 jobs:
