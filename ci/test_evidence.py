@@ -4,11 +4,13 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
 import evidence
 from bootstrap import VERSIONS
 from live_benchmark import PROFILES, ENGINES, cases, fresh_seed
+from runner import actions_context, validate_same_run
 
 
 class GateContracts(unittest.TestCase):
@@ -21,6 +23,8 @@ class GateContracts(unittest.TestCase):
                              checks=dict.fromkeys(ENGINES, True), completed=True, gaps=[], runs=[],
                              original_input_sha256={'unit-test-fixture': 'a' * 64},
                              input_revision='b' * 40,
+                             ci=dict(provider='github-actions', repository='benor1470/dbMeter', run_id='123',
+                                     run_attempt='1', runner_name='synthetic-unit-fixture', runner_os='Linux', checkout_revision='b' * 40),
                              ramsql=dict(source=copy.deepcopy(VERSIONS['ramsql']), binary_sha256='c' * 64))
         for engine in ENGINES:
             xml = ET.Element('testsuite')
@@ -57,6 +61,42 @@ class GateContracts(unittest.TestCase):
     def test_smoke_can_never_qualify(self):
         self.campaign.update(profile='smoke', policy=PROFILES['smoke'])
         self.assertFalse(self.result()['qualified'])
+
+    def test_local_campaign_cannot_qualify(self):
+        self.campaign.pop('ci')
+        self.assertFalse(self.result()['qualified'])
+
+    def test_diagnostic_campaign_cannot_qualify(self):
+        self.campaign['diagnostic_only'] = True
+        self.assertFalse(self.result()['qualified'])
+
+    def test_wrong_ci_provider_cannot_qualify(self):
+        self.campaign['ci']['provider'] = 'local'
+        self.assertFalse(self.result()['qualified'])
+
+    def test_missing_runner_identity_cannot_qualify(self):
+        self.campaign['ci'].pop('runner_name')
+        self.assertFalse(self.result()['qualified'])
+
+    def test_missing_ci_attempt_cannot_qualify(self):
+        self.campaign['ci'].pop('run_attempt')
+        self.assertFalse(self.result()['qualified'])
+
+    def test_different_ci_checkout_cannot_qualify(self):
+        self.campaign['ci']['checkout_revision'] = 'c' * 40
+        self.assertFalse(self.result()['qualified'])
+
+    def test_mixed_ci_run_attempts_rejected(self):
+        current = copy.deepcopy(self.campaign['ci'])
+        validate_same_run(self.campaign['ci'], current)
+        for key, value in (('run_id', '456'), ('run_attempt', '2'), ('checkout_revision', 'c' * 40)):
+            changed = dict(current, **{key: value})
+            with self.assertRaises(ValueError):
+                validate_same_run(changed, current)
+
+    def test_local_throughput_entry_point_rejected(self):
+        with patch.dict('os.environ', {}, clear=True), self.assertRaises(RuntimeError):
+            actions_context('b' * 40)
 
     def test_error_cannot_be_counted_as_fast_query(self):
         self.mutate_raw(lambda raw: next(iter(raw['scenarios'].values())).update(errors=1))

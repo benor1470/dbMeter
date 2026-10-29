@@ -6,10 +6,12 @@ import math
 import os
 from pathlib import Path
 import statistics
+import subprocess
 import xml.etree.ElementTree as ET
 
 from bootstrap import ROOT, VERSIONS
 from live_benchmark import cases, PROFILES, ENGINES
+from runner import validate_ci, actions_context, validate_same_run
 
 SUITES = ('size-scaling', 'sales-subset', 'sales-full')
 MIXED = {
@@ -105,6 +107,12 @@ def summarize(folder):
     if set(campaign['expected_cases']) != expected or campaign['policy'] != PROFILES[campaign['profile']]:
         raise ValueError('Declared benchmark matrix/policy changed')
     issues = list(campaign.get('gaps', []))
+    if campaign.get('diagnostic_only'):
+        issues.append('Selected-read diagnostics cannot qualify the all-case advantage gate')
+    try:
+        validate_ci(campaign.get('ci', {}), campaign['input_revision'])
+    except (ValueError, TypeError, KeyError) as error:
+        issues.append('CI provenance: ' + str(error))
     if campaign.get('error'):
         issues.append(campaign['error'])
     if campaign.get('completed') is not True:
@@ -166,7 +174,7 @@ def summarize(folder):
     qualifies = campaign['profile'] == 'qualification' and not issues and all(row['advantage'] for row in rows)
     return dict(schema=1, suite=suite, profile=campaign['profile'], qualified=qualifies,
                 source_revision=campaign['ramsql']['source']['revision'], binary_sha256=campaign['ramsql']['binary_sha256'],
-                input_revision=campaign['input_revision'], issues=sorted(set(issues)), rows=rows)
+                input_revision=campaign['input_revision'], ci=campaign.get('ci', {}), issues=sorted(set(issues)), rows=rows)
 
 
 def markdown(summary):
@@ -175,6 +183,8 @@ def markdown(summary):
              'All rates are queries/transactions per second at the original JDBC boundary. Bold ratios highlight at least 2× measured leads, including limited leads that do not pass the full gate.', '',
              '| Workload / clients | RAMSQL | PostgreSQL | IRDB | RAMSQL / fastest reference |',
              '| --- | ---: | ---: | ---: | ---: |']
+    if summary.get('ci', {}).get('run_url'):
+        lines[2:2] = [f"Evidence: {summary['ci']['run_url']}", '']
     for row in summary['rows']:
         cells = [row['case']]
         for engine in ENGINES:
@@ -216,6 +226,8 @@ def main():
         (folder / 'summary.md').write_text(text)
         publish(text)
     else:
+        revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+        current_ci = actions_context(revision)
         summaries, errors = [], []
         folders = list(args.root.rglob('campaign.json'))
         suites_by_name = defaultdict(list)
@@ -236,6 +248,11 @@ def main():
         for key in ('source_revision', 'binary_sha256', 'input_revision'):
             if len({s[key] for s in summaries}) != 1:
                 errors.append('Inconsistent candidate/input provenance: ' + key)
+        for summary in summaries:
+            try:
+                validate_same_run(summary['ci'], current_ci)
+            except ValueError as error:
+                errors.append(str(error))
         passed = len(summaries) == 3 and not errors and all(s['qualified'] for s in summaries)
         result = dict(schema=1, qualified=passed, merge_allowed=passed, minimum_ratio=MIN_RATIO, max_p99_ratio=MAX_P99_RATIO,
                       workflow_run=f"https://github.com/{os.environ.get('GITHUB_REPOSITORY', '')}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}",

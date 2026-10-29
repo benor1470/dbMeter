@@ -14,15 +14,23 @@ not permission to merge this PR or make a general README claim.**
 
 ## Running before merge
 
-- Every same-repository PR runs a short smoke comparison: one trial, two seconds
-  warmup and three seconds measured. Smoke results can never pass the advantage
-  gate. Fork PRs receive no private driver secrets.
-- Add the PR label **`benchmark:qualify`** to run qualification without first
-  merging a new workflow onto the default branch. Qualification uses three
+- Performance decisions use **CI measurements only**. Local execution remains
+  useful for correctness and profiling; local throughput cannot qualify a
+  candidate or a README claim. Campaign execution requires GitHub Actions.
+  The gate also requires every suite to come from the same run, attempt and
+  exact checkout; results from different machines/runs cannot be pooled.
+- Every same-repository PR update runs qualification without first merging the
+  workflow onto the default branch. Qualification uses three
   trials, the original five-second ramp, 15-second warmup and 60-second measured
-  phases, with fresh JVMs and rotating engine order. Reapply the label or push a
-  candidate update for a new run. After the workflow exists on the default branch,
-  `workflow_dispatch` provides the same choice.
+  phases, with fresh JVMs and rotating engine order on the same VM for each
+  suite. Fork PRs receive no private driver secrets. After the workflow exists
+  on the default branch, `workflow_dispatch` can request a smoke run explicitly;
+  smoke results can never pass the advantage gate.
+- Each campaign records the Actions run URL/attempt, runner identity/image,
+  CPU model/affinity, cgroup limits, RAM/swap and load/pressure snapshots before
+  and after timed cases. CI reduces local interference but does not guarantee
+  identical physical hardware; compare engines within each campaign, rather
+  than attributing cross-run raw-QPS differences to a code change.
 - RAMSQL's source/toolchain and vendor downloads are checksum pinned in
   `versions.json`. Update that reviewed file to qualify a different candidate;
   a floating `latest` build is never silently substituted.
@@ -76,6 +84,22 @@ reports rejected reservations as gaps; it imposes no fixed RAM-size threshold.
 The dataset is never shrunk.
 This prevents a small hosted-runner screen from being presented as 5M/100M
 production qualification. See [GitHub runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+
+## Optimization diagnostics while SQL gaps remain
+
+Separate `diagnostic-sales-subset` and `diagnostic-sales-full` jobs retain all
+original full-suite checks, then independently check the existing customer-total
+and store/category cases plus their original totals check on every engine.
+Only when those checks pass do they time those two unchanged query files with
+1/8 clients, three original-duration trials and rotating engine order. They use
+the original 1M/5M datasets respectively; a full-data capacity rejection remains
+visible and never becomes a smaller-dataset result.
+
+Diagnostic artifacts are named `diagnostic-*`. The all-case gate downloads only
+`live-*`, and explicitly rejects diagnostic campaigns. Selected-read tables
+therefore support optimization decisions without hiding the remaining SQL gaps
+or granting permission to merge. Neither Java/adapters nor original example
+SQL/data/expected CSV files are changed.
 
 ## Permission to merge and claim an advantage
 

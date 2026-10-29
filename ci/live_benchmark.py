@@ -15,6 +15,7 @@ import time
 import uuid
 
 from bootstrap import ROOT, RUNTIME, VERSIONS, digest
+from runner import actions_context, host_snapshot
 
 ENGINES = ('ramsql', 'postgres', 'irdb')
 SIZES = (100, 512, 1000, 10000, 100000, 1000000)
@@ -106,6 +107,8 @@ def fresh_seed(original, target):
 
 class Campaign:
     def __init__(self, suite, profile):
+        revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+        ci_context = actions_context(revision)
         self.suite, self.profile = suite, profile
         self.policy = PROFILES[profile]
         self.out = ROOT / 'reports/live' / suite
@@ -130,9 +133,10 @@ class Campaign:
         self.data_files = []
         self.report = dict(schema=1, suite=suite, profile=profile, policy=self.policy,
                            expected_cases=[f'{name}/{clients}' for name, clients in cases(suite)],
-                           input_revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+                           input_revision=revision, ci=ci_context,
                            environment=dict(platform=platform.platform(), logical_cpus=os.cpu_count(),
-                                            memory_total_bytes=os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')),
+                                            memory_total_bytes=os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES'),
+                                            runner=host_snapshot()),
                            ramsql=self.ram_provenance, dependencies=json.loads((RUNTIME / 'dependencies.json').read_text()),
                            scope='memory-resident read-only JDBC workloads; not durable-commit or 100M-row qualification',
                            checks={}, runs=[], gaps=[], commands=[])
@@ -386,10 +390,12 @@ class Campaign:
                                 '--node', 'local', '--run-id', name, '--out', str(target)]
                         if scenario != 'mixed':
                             tail += ['--only', scenario]
+                        before = host_snapshot()
                         code = self.command(name, self.java('load', engine, tail))
                         raw = target / 'local.json'
                         self.report['runs'].append(dict(engine=engine, trial=trial + 1, case=f'{scenario}/{clients}',
-                                                        returncode=code, report=str(raw.relative_to(self.out)) if raw.exists() else None))
+                                                        returncode=code, report=str(raw.relative_to(self.out)) if raw.exists() else None,
+                                                        host_before=before, host_after=host_snapshot()))
                         self.save()
         self.report['completed'] = True
         self.save()
