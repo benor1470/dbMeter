@@ -23,6 +23,10 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [ramsql, ramsql-baseline]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,13 +37,15 @@ jobs:
       - name: Test the evidence gate, including false-green cases
         run: python -m unittest discover -s ci -p 'test_*.py' -v
       - name: Build pinned allocator-free RAMSQL
-        run: python ci/bootstrap.py ramsql
+        env:
+          BUILD_VARIANT: ${{ matrix.variant }}
+        run: python ci/bootstrap.py "$BUILD_VARIANT"
       - uses: actions/upload-artifact@v4
         with:
-          name: ramsql-benchmark-binary
+          name: ${{ matrix.variant }}-benchmark-binary
           path: |
-            .ci-runtime/ramsql/bin/ramsql
-            .ci-runtime/ramsql-provenance.json
+            .ci-runtime/${{ matrix.variant == 'ramsql-baseline' && 'baseline-build/' || '' }}ramsql/bin/ramsql
+            .ci-runtime/${{ matrix.variant == 'ramsql-baseline' && 'baseline-build/' || '' }}ramsql-provenance.json
           retention-days: 14
 
   benchmark:
@@ -57,6 +63,7 @@ jobs:
           - {suite: sales-full, kind: live}
           - {suite: sales-subset, kind: diagnostic}
           - {suite: sales-full, kind: diagnostic}
+          - {suite: sales-subset, kind: paired}
     env:
       BENCHMARK_PROFILE: ${{ (github.event_name == 'pull_request' || inputs.qualification) && 'qualification' || 'smoke' }}
     steps:
@@ -77,6 +84,11 @@ jobs:
         with:
           name: ramsql-benchmark-binary
           path: .ci-runtime/downloaded-ramsql
+      - uses: actions/download-artifact@v4
+        if: matrix.kind == 'paired'
+        with:
+          name: ramsql-baseline-benchmark-binary
+          path: .ci-runtime/downloaded-baseline
       - name: Restore the supplied private IRDB Java client
         env:
           IRDB_JDBC_PART_1: ${{ secrets.IRDB_JDBC_PART_1 }}
@@ -100,6 +112,9 @@ jobs:
       - name: Always publish the complete comparison, including losses and gaps
         if: always() && matrix.kind == 'live'
         run: python ci/evidence.py suite --suite '${{ matrix.suite }}'
+      - name: Same-runner baseline/candidate AB BA AB comparison
+        if: matrix.kind == 'paired'
+        run: python ci/paired_benchmark.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

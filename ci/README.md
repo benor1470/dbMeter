@@ -76,9 +76,12 @@ debug runs using a forwarded port are not qualifying performance evidence.
 RAMSQL's default text layout is used; no narrower binary is substituted to fit CI.
 These are memory-resident read comparisons, not a durable-write benchmark.
 
-Default private GitHub runners have 8 GB RAM. Full default-layout RAMSQL data
-qualification currently needs a larger Linux machine: set repository variable
-`RAMSQL_BENCHMARK_RUNNER` to an existing suitable runner label. The workflow uses
+Standard public Linux runners provide 16 GB RAM and four vCPUs; private runners
+provide 8 GB and two vCPUs. The repository is now public. Attempt 2 of run
+40859947997 reports 16,760,344,576 bytes and four CPUs, loads the original full
+5M dataset, and retains its four RAMSQL SQL-feature failures. Full-data admission
+does not establish full SQL qualification. An existing larger Linux runner can
+be selected through repository variable `RAMSQL_BENCHMARK_RUNNER`. The workflow uses
 RAMSQL's actual native capacity admission, captures its machine budget and
 reports rejected reservations as gaps; it imposes no fixed RAM-size threshold.
 The dataset is never shrunk.
@@ -100,6 +103,26 @@ Diagnostic artifacts are named `diagnostic-*`. The all-case gate downloads only
 therefore support optimization decisions without hiding the remaining SQL gaps
 or granting permission to merge. Neither Java/adapters nor original example
 SQL/data/expected CSV files are changed.
+
+## Same-runner candidate/control experiments
+
+The `paired-sales-subset` job runs a separately pinned RAMSQL baseline and
+candidate on one VM in AB / BA / AB order. Both artifacts must have identical
+dependency-manifest hashes, toolchain pins and build arguments. For the typed
+group experiment the two server commits differ only by the opt-in and changelog;
+the dependency includes the same sparse-predicate path in both variants.
+
+Each variant/pair loads fresh original 1M data and passes all seven original
+checks before timing the original weighted mix and top-products case at 1/8
+clients. Every timing uses the original 5s ramp / 15s warmup / 60s measure and a
+fresh JVM. Paired ratios, all three trial ranges, p99, raw histograms and runner
+pressure snapshots are retained. Partial, reordered, erroring or mismatched
+binary/source trials are not scored. No local throughput run supplies evidence.
+
+Paired artifacts are named `paired-*`, declare `diagnostic_only=true` and
+`merge_allowed=false`, and never enter the unchanged all-engine advantage gate.
+They isolate an execution change without turning a selected-case improvement
+into permission to merge or claim universal superiority.
 
 ## Permission to merge and claim an advantage
 
