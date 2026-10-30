@@ -113,7 +113,8 @@ group experiment the two server commits differ only by the opt-in and changelog;
 the dependency includes the same sparse-predicate path in both variants.
 
 Each variant/pair loads fresh original 1M data and passes all seven original
-checks before timing the original weighted mix and top-products case at 1/8
+checks before timing the original weighted mix and an explicitly pinned
+original focused case at 1/8
 clients. Every timing uses the original 5s ramp / 15s warmup / 60s measure and a
 fresh JVM. Paired ratios, all three trial ranges, p99, raw histograms and runner
 pressure snapshots are retained. Partial, reordered, erroring or mismatched
@@ -123,6 +124,12 @@ Paired artifacts are named `paired-*`, declare `diagnostic_only=true` and
 `merge_allowed=false`, and never enter the unchanged all-engine advantage gate.
 They isolate an execution change without turning a selected-case improvement
 into permission to merge or claim universal superiority.
+
+`versions.json` pins `paired_focus` to an existing original subset scenario.
+The first experiment used top-products for typed multi-aggregation; the next
+uses segment/discount for dimension group IDs. Changing the diagnostic focus
+does not change any original SQL, expected CSV, weighted mix or advantage-gate
+case. The focused scenario and all trial settings remain in every report.
 
 ## Permission to merge and claim an advantage
 

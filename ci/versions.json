@@ -1,13 +1,13 @@
 {
   "ramsql": {
-    "revision": "82441c6ee45793a0865b1bc6b49780371371810f",
-    "url": "https://github.com/SB0LTD/ramsql/archive/82441c6ee45793a0865b1bc6b49780371371810f.tar.gz",
-    "sha256": "33612c7741167ceb5855d91263f7e39905bbf734981d864b2e1ad5f12c8fc448"
+    "revision": "0ba7c35faaa2f2a30701769f49929a1542e316e6",
+    "url": "https://github.com/SB0LTD/ramsql/archive/0ba7c35faaa2f2a30701769f49929a1542e316e6.tar.gz",
+    "sha256": "c5b829cb862d9d80ee5c2a548542ad90d5cf44c7b3f924bcad8b43ce6dcae248"
   },
   "ramsql_baseline": {
-    "revision": "6c41b641a1f73bc6c5b47baec99af81196fb36fe",
-    "url": "https://github.com/SB0LTD/ramsql/archive/6c41b641a1f73bc6c5b47baec99af81196fb36fe.tar.gz",
-    "sha256": "a3a0aaeefa302c4418e5f90997cc61352963255bd7b50f48c20631a6b08b9c93"
+    "revision": "37035e65d36ace6d538544ac0b308b347caf1637",
+    "url": "https://github.com/SB0LTD/ramsql/archive/37035e65d36ace6d538544ac0b308b347caf1637.tar.gz",
+    "sha256": "f3ece1c916fe487b42bfd2ceaa56ca527b92217af420b18090e6f4681a7978ed"
   },
   "sig": {
     "url": "https://github.com/SB0LTD/sig/releases/download/sig-0.6.4-zig0.17.0.90a898d/sig-0.6.4-zig0.17.0.90a898d-x86_64-linux.tar.xz",
@@ -27,5 +27,6 @@
     "url": "https://www.interactivereporting.com/irdb/irdb_core10.zip",
     "sha256": "1cdcebfb5e0c0a2752affdeb8d84681dc6040227660602d3327c1eff0327f135"
   },
-  "postgres_image": "postgres:18.3-bookworm@sha256:80630f83606d8db77d30b3851b16a9f78be2d0d4dda6f7b82a1fdca5ebe3acba"
+  "postgres_image": "postgres:18.3-bookworm@sha256:80630f83606d8db77d30b3851b16a9f78be2d0d4dda6f7b82a1fdca5ebe3acba",
+  "paired_focus": "s4_segment_discount"
 }

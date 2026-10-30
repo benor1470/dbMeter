@@ -9,7 +9,16 @@ from live_benchmark import Campaign
 from runner import host_snapshot
 
 ORDER = (('baseline', 'candidate'), ('candidate', 'baseline'), ('baseline', 'candidate'))
-CASES = ('mixed/1', 'mixed/8', 's3_top_products/1', 's3_top_products/8')
+FOCUS = VERSIONS.get('paired_focus', 's3_top_products')
+
+
+def paired_cases(focus):
+    if focus not in MIXED['sales-subset']:
+        raise ValueError('Paired focus must name an existing original subset scenario')
+    return ('mixed/1', 'mixed/8', focus + '/1', focus + '/8')
+
+
+CASES = paired_cases(FOCUS)
 
 
 def validate_sources(proofs):
@@ -71,7 +80,7 @@ class PairedCampaign(Campaign):
             raise ValueError('Downloaded baseline artifact changed')
         self.report.update(diagnostic_only=True, merge_allowed=False,
             scope='Paired RAMSQL control/candidate; not reference-engine or full-suite qualification',
-            expected_cases=list(CASES), paired_order=ORDER,
+            expected_cases=list(CASES), paired_order=ORDER, paired_focus=FOCUS,
             paired_sources=dict(baseline=baseline, candidate=self.ram_provenance), paired_admission={})
         validate_sources(self.report['paired_sources'])
         self.save()

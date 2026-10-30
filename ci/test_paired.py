@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from bootstrap import VERSIONS
 from evidence import MIXED
 from live_benchmark import PROFILES
-from paired_benchmark import CASES, ORDER, summarize_pairs
+from paired_benchmark import CASES, ORDER, summarize_pairs, paired_cases
 
 
 class PairedContracts(unittest.TestCase):
@@ -47,6 +47,13 @@ class PairedContracts(unittest.TestCase):
         self.assertEqual(len(result['rows']), 4)
         for row in result['rows']:
             self.assertEqual(row['paired_qps_ratios'], [2, 2, 2])
+
+    def test_focus_keeps_mix_and_original_scenario_only(self):
+        for focus in MIXED['sales-subset']:
+            self.assertEqual(paired_cases(focus), ('mixed/1', 'mixed/8', focus + '/1', focus + '/8'))
+        for focus in ('mixed', 'new_faster_query', ''):
+            with self.assertRaises(ValueError):
+                paired_cases(focus)
 
     def test_missing_trial_rejected(self):
         self.campaign['runs'].pop()
