@@ -1,13 +1,13 @@
 {
   "ramsql": {
-    "revision": "d61e2570076ab1c1dbaaf69593a0d1934347a98c",
-    "url": "https://github.com/SB0LTD/ramsql/archive/d61e2570076ab1c1dbaaf69593a0d1934347a98c.tar.gz",
-    "sha256": "9aab047b44bad3586155839376906241add3cae6443734076c3400bce7109c18"
+    "revision": "f1a0fd9b213cb282f7a2d1be99f7033a27afd9c6",
+    "url": "https://github.com/SB0LTD/ramsql/archive/f1a0fd9b213cb282f7a2d1be99f7033a27afd9c6.tar.gz",
+    "sha256": "db971502a27f2ce64ce4230bdd820e17a73049d56f226aab431bad495bff991e"
   },
   "ramsql_baseline": {
-    "revision": "5b472b8bf958347ce8f3e00e800675e3f0563509",
-    "url": "https://github.com/SB0LTD/ramsql/archive/5b472b8bf958347ce8f3e00e800675e3f0563509.tar.gz",
-    "sha256": "bc33550b6115b1299e275fa714a0b439ed352c400d6dba0833b8135fde240189"
+    "revision": "f1a0fd9b213cb282f7a2d1be99f7033a27afd9c6",
+    "url": "https://github.com/SB0LTD/ramsql/archive/f1a0fd9b213cb282f7a2d1be99f7033a27afd9c6.tar.gz",
+    "sha256": "db971502a27f2ce64ce4230bdd820e17a73049d56f226aab431bad495bff991e"
   },
   "sig": {
     "url": "https://github.com/SB0LTD/sig/releases/download/sig-0.6.4-zig0.17.0.90a898d/sig-0.6.4-zig0.17.0.90a898d-x86_64-linux.tar.xz",
