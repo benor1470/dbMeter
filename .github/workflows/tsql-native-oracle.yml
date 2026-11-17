@@ -14,8 +14,8 @@ jobs:
     timeout-minutes: 30
     env:
       ZPM_HARNESS_REVISION: 033381b3239396a24e2f6e1f93f1eaf841ebfa61
-      RAMSQL_REVISION: f6c6867a1d776b96657c3ad3405b4927e48cfc9b
-      RAMSQL_ARCHIVE_SHA256: f89cb57ef0e00c14a28fc1a7563c81b289c518ab4bf48dd81cc7d607d13458de
+      RAMSQL_REVISION: 13294c5246dce4ef6ab23af55c1679b7d189af42
+      RAMSQL_ARCHIVE_SHA256: e79ea390c0bb98cbcce1c520355ad95bd4c0eb115c2a4bc1ed6e1d85c097ca0e
       ORACLE_IMAGE: mcr.microsoft.com/mssql/server@sha256:4525e3efac9f3e241cb003bb2ff2a82818b502f37e12049d788b1a9fa7e13b7f
     steps:
       - uses: actions/checkout@v4
