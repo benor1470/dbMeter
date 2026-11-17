@@ -6,10 +6,12 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
+from urllib.error import HTTPError
 
 from bootstrap import source_capacity_flags
 
-from bootstrap import digest, install_release, workflow_matrices
+from bootstrap import digest, download, install_release, workflow_matrices
 from live_benchmark import SIZES, ramsql_banks
 
 
@@ -59,6 +61,17 @@ class ReleaseInputTests(unittest.TestCase):
             archive.write(b'additional bytes')
         with self.assertRaisesRegex(ValueError, 'Checksum mismatch'):
             install_release(self.spec, self.runtime)
+
+    def test_retries_rate_limited_public_dependency_then_checks_digest(self):
+        url = 'https://example.com/pinned.jar'
+        limited = HTTPError(url, 429, 'Too Many Requests', {'Retry-After': '5'}, None)
+        spec = dict(url=url, sha256=hashlib.sha256(self.image).hexdigest())
+        with patch('bootstrap.urllib.request.urlopen', side_effect=[limited, io.BytesIO(self.image)]) as open_url, \
+             patch('bootstrap.time.sleep') as sleep:
+            path = download(spec, self.runtime / 'pinned.jar')
+        self.assertEqual(path.read_bytes(), self.image)
+        self.assertEqual(open_url.call_count, 2)
+        sleep.assert_called_once_with(5)
 
     def test_requires_runtime_pass_on_the_same_revision(self):
         proof = self.manifest['targets'][0]['hosted_runtime_evidence']

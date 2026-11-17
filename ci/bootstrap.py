@@ -8,6 +8,8 @@ import re
 import subprocess
 import sys
 import tarfile
+import time
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -23,8 +25,18 @@ def digest(path):
 def download(spec, target):
     target.parent.mkdir(parents=True, exist_ok=True)
     if not target.exists():
-        with urllib.request.urlopen(spec['url'], timeout=120) as response:
-            target.write_bytes(response.read())
+        for delay in (2, 8, 32, None):
+            try:
+                with urllib.request.urlopen(spec['url'], timeout=120) as response:
+                    target.write_bytes(response.read())
+                break
+            except urllib.error.HTTPError as error:
+                if delay is None or error.code not in (429, 500, 502, 503, 504):
+                    raise
+                retry_after = error.headers.get('Retry-After', '')
+                if retry_after.isdecimal():
+                    delay = max(delay, min(120, int(retry_after)))
+                time.sleep(delay)
     if digest(target) != spec['sha256']:
         raise ValueError(f'Checksum mismatch for {target.name}')
     return target
