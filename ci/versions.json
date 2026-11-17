@@ -1,12 +1,12 @@
 {
   "ramsql": {
-    "revision": "7c0471e828cf8eab8266a04f4dbc309fdd1e9182",
+    "revision": "3642a4b1ce4d696a862a2d55f7263c9baefac432",
     "release": {
       "tag": "ci-v0.3.0-beta.2-run.42408071656.1",
       "version": "0.3.0-beta.2",
-      "manifest_sha256": "d73e2095ba5ac8092f4df42532c4266a68a844617f43c329a5c3d5cd3edfb4e9",
-      "archive_sha256": "2e77ec93d91aebc878b87cb44180c50438b427309dcda16e04d4e8fdb51a4b2e",
-      "image_sha256": "fa513185c99963a060beaf11417ff9f470d49bad1635d199db738d60fc2c632d"
+      "manifest_sha256": "6ae599c5545e4786625dd09c7addccae2c984e8404804793c7200522704aa7f7",
+      "archive_sha256": "a438e61582bb5cf24841bfed9ed4293a7f23154dad8ca2d66d9084727b1ad36f",
+      "image_sha256": "3d37da1b69bdf37df1285acb9916cea90f1aea2825bb706da2aea8ef3e11a76b"
     }
   },
   "ramsql_baseline": {
