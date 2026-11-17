@@ -43,7 +43,7 @@
   "paired_focus": "prepared-pk",
   "paired_suite": "size-scaling",
   "paired_dependency_manifests": {
-    "baseline": "f4bbfe7a74d037300fceb23df00de7a3f534f2fc6dc7c63c0ff69a5b196a4b5c",
-    "candidate": "f4bbfe7a74d037300fceb23df00de7a3f534f2fc6dc7c63c0ff69a5b196a4b5c"
+    "baseline": "fef286a13ccba3714d855d79fc791b7d78ccad5ee79cf67af7e2adc9930f2439",
+    "candidate": "fef286a13ccba3714d855d79fc791b7d78ccad5ee79cf67af7e2adc9930f2439"
   }
 }
