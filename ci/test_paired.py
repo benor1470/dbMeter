@@ -62,7 +62,7 @@ class PairedContracts(unittest.TestCase):
         result = summarize_pairs(self.folder, self.campaign)
         self.assertFalse(result['merge_allowed'])
         self.assertTrue(result['diagnostic_only'])
-        self.assertEqual(len(result['rows']), 4)
+        self.assertEqual(len(result['rows']), len(CASES))
         for row in result['rows']:
             self.assertEqual(row['paired_qps_ratios'], [2, 2, 2])
 
@@ -77,10 +77,12 @@ class PairedContracts(unittest.TestCase):
         with self.assertRaises(ValueError):
             paired_cases(case, 'sales-subset')
 
-    def test_prepared_pk_selects_only_four_original_size_cases(self):
+    def test_size_scaling_focus_selects_original_cases(self):
         self.assertEqual(paired_cases('prepared-pk', 'size-scaling'),
                          ('s100000_pk/1', 's100000_pk/8', 's1000000_pk/1', 's1000000_pk/8'))
-        with self.assertRaisesRegex(ValueError, 'prepared-PK focus'):
+        self.assertEqual(paired_cases('s1000000_filter', 'size-scaling'),
+                         ('s1000000_filter/1', 's1000000_filter/8'))
+        with self.assertRaisesRegex(ValueError, 'original size-scaling paired focus'):
             paired_cases('s100000_topn', 'size-scaling')
 
     @unittest.skipUnless(SUITE == 'size-scaling', 'prepared PK evidence')
@@ -135,7 +137,7 @@ class PairedContracts(unittest.TestCase):
         self.campaign['paired_sources']['baseline']['dependency_manifest_sha256'] = 'f' * 64
         pins = {'baseline': 'f' * 64, 'candidate': 'e' * 64}
         with patch.dict(VERSIONS, paired_dependency_manifests=pins):
-            self.assertEqual(len(summarize_pairs(self.folder, self.campaign)['rows']), 4)
+            self.assertEqual(len(summarize_pairs(self.folder, self.campaign)['rows']), len(CASES))
             self.campaign['paired_sources']['candidate']['dependency_manifest_sha256'] = 'f' * 64
             with self.assertRaisesRegex(ValueError, 'explicit pins'):
                 summarize_pairs(self.folder, self.campaign)
@@ -150,7 +152,7 @@ class PairedContracts(unittest.TestCase):
         for run in self.campaign['runs']:
             run['binary_sha256'] = binary['binary_sha256']
             run['read_cache_bytes'] = budgets[run['variant']]
-        self.assertEqual(len(summarize_pairs(self.folder, self.campaign)['rows']), 4)
+        self.assertEqual(len(summarize_pairs(self.folder, self.campaign)['rows']), len(CASES))
         self.campaign['runs'][0]['read_cache_bytes'] = 1
         with self.assertRaisesRegex(ValueError, 'cache budget'):
             summarize_pairs(self.folder, self.campaign)

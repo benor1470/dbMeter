@@ -1,22 +1,24 @@
 {
   "ramsql": {
-    "revision": "cab67ea496813c96c1c46364ebf1c9df192a7ed4",
-    "url": "https://github.com/SB0LTD/ramsql/archive/cab67ea496813c96c1c46364ebf1c9df192a7ed4.tar.gz",
-    "sha256": "74087839a6f4556f1c0bbeaa4e343711aa779ee2d392055a790e0c2b1650083b",
+    "revision": "a77fb6523aca3e2d9084f1ffac23af57da99779b",
+    "url": "https://github.com/SB0LTD/ramsql/archive/a77fb6523aca3e2d9084f1ffac23af57da99779b.tar.gz",
+    "sha256": "f306e1dd40149f12c7c055e7a9810e10375e6f55be13c44ae10b2708777cff5c",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
-      "text-bytes": 200
+      "text-bytes": 200,
+      "integral-version-banks": true
     }
   },
   "ramsql_baseline": {
-    "revision": "ffcfcc0bb0e7df3d23b46986cfc50cde53177ae0",
-    "url": "https://github.com/SB0LTD/ramsql/archive/ffcfcc0bb0e7df3d23b46986cfc50cde53177ae0.tar.gz",
-    "sha256": "4d8e1b07a690cc6ca3c1f5d9ee30f2b6bb650780af6cf16f1da4bb490358366e",
+    "revision": "0d5c6b444f802e9b8ae63c5ecfc2b212b94910ea",
+    "url": "https://github.com/SB0LTD/ramsql/archive/0d5c6b444f802e9b8ae63c5ecfc2b212b94910ea.tar.gz",
+    "sha256": "de43f6ca6162f9c9a61dc23136150b1d46f3b1197b6fa098bf052c32d2744ca8",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
-      "text-bytes": 200
+      "text-bytes": 200,
+      "integral-version-banks": true
     }
   },
   "sig": {
@@ -38,10 +40,10 @@
     "sha256": "1cdcebfb5e0c0a2752affdeb8d84681dc6040227660602d3327c1eff0327f135"
   },
   "postgres_image": "postgres:18.3-bookworm@sha256:80630f83606d8db77d30b3851b16a9f78be2d0d4dda6f7b82a1fdca5ebe3acba",
-  "paired_focus": "prepared-pk",
+  "paired_focus": "s1000000_filter",
   "paired_suite": "size-scaling",
   "paired_dependency_manifests": {
-    "baseline": "31227804db613efb8ac70bda1ffb0a5786d9013ff57a78a2ed177b2001ee8328",
-    "candidate": "3564290df4baf07bcaedfafd518b7418353ba5e02b4a0994c6df3c781e860eb2"
+    "baseline": "f0e103bcf9e81a2270fd4c51e7e10cb53bcd019d40202dc1c8c249ded105b99a",
+    "candidate": "29758caafafbc595ea2b3d894a9da9a9bd6941e645dbc871c6291ad438c4f220"
   }
 }

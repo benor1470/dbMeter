@@ -3,6 +3,7 @@ import json
 import re
 import statistics
 import sys
+import time
 from xml.etree.ElementTree import ParseError
 
 from bootstrap import ROOT, RUNTIME, VERSIONS, digest, paired_cache_budgets
@@ -17,9 +18,11 @@ FOCUS = VERSIONS.get('paired_focus', 's3_top_products')
 
 def paired_cases(focus, suite='sales-subset'):
     if suite == 'size-scaling':
-        if focus != 'prepared-pk':
-            raise ValueError('Size-scaling pairing requires the original prepared-PK focus')
-        return tuple(f's{size}_pk/{clients}' for size in (100000, 1000000) for clients in (1, 8))
+        if focus == 'prepared-pk':
+            return tuple(f's{size}_pk/{clients}' for size in (100000, 1000000) for clients in (1, 8))
+        if focus == 's1000000_filter':
+            return tuple(f'{focus}/{clients}' for clients in (1, 8))
+        raise ValueError('Unknown original size-scaling paired focus')
     if suite not in MIXED or focus not in MIXED[suite]:
         raise ValueError('Paired focus must name an existing scenario in its original sales suite')
     return ('mixed/1', 'mixed/8', focus + '/1', focus + '/8')
@@ -139,6 +142,7 @@ class PairedCampaign(Campaign):
             expected_cases=list(CASES), paired_order=ORDER, paired_focus=FOCUS,
             paired_sources=dict(baseline=baseline, candidate=self.ram_provenance), paired_admission={},
             paired_server_arguments={},
+            paired_load_seconds={},
             paired_read_cache_bytes=self.cache_budgets, paired_read_cache={})
         validate_sources(self.report['paired_sources'])
         self.save()
@@ -167,8 +171,10 @@ class PairedCampaign(Campaign):
                         if arguments != next(iter(self.report['paired_server_arguments'].values())):
                             raise RuntimeError('Paired server capacity arguments differ')
                     self.report['paired_read_cache'][f'{mode}/{pair}'] = self.report['ramsql_read_cache']
+                    load_started = time.perf_counter()
                     for source in self.data_files:
                         self.psql(source)
+                    self.report['paired_load_seconds'][f'{mode}/{pair}'] = time.perf_counter() - load_started
                     name = f'{mode}-pair{pair}-checks'
                     checks = self.out / (name + '.xml')
                     if self.command(name, self.java('check', 'ramsql', ['--junit', str(checks)])):
