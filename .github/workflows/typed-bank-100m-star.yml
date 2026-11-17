@@ -2,7 +2,7 @@ name: Typed bank 100M synchronous WAL and recovery
 
 on:
   push:
-    branches: [bench/ramsql-typed-bank-durable-100m-20261117]
+    branches: [bench/ramsql-typed-bank-durable-cardinality-20261117]
   workflow_dispatch:
 
 permissions:
@@ -13,8 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      RAMSQL_SOURCE_REVISION: efecbcd683528ffeb4793baafa7ed0c79081f324
-      RAMSQL_SOURCE_SHA256: 809a93153714e64b5d05dc717d7e417c864f4fb42b86a0affe1b50a6d95b2908
+      RAMSQL_SOURCE_REVISION: aebb257599da2325849c1975573b9d303b88ecc0
+      RAMSQL_SOURCE_SHA256: 2890faed20ed6ecc8e4b1a6f47f5abc5caad2b1b69383442dcaf03427849c719
       RAMSQL_FIXTURE_REVISION: bfdf49a4bf017f65d63590eb4aed0309d0874dce
       RAMSQL_FIXTURE_SHA256: 7112f0f063e02a5474f7e14aa4bb81ba354d60ef5ed5d27831c3def85b446c8b
     steps:
@@ -92,6 +92,20 @@ jobs:
           }
           (path / "provenance.json").write_text(json.dumps(identity, indent=2) + "\n", encoding="utf-8")
           PY
+      - name: Check replay cardinality and change-record validation
+        run: |
+          set -euo pipefail
+          read -r zpm_url zpm_sha < <(python -c 'import json; z=json.load(open("evidence/provenance.json"))["zpm"]; print(z["archive"], z["sha256"])')
+          zpm_archive="$RUNNER_TEMP/zpm-contract.tar.gz"
+          zpm_root="$RUNNER_TEMP/zpm-contract"
+          curl --fail --location --retry 3 "$zpm_url" --output "$zpm_archive"
+          printf '%s  %s\n' "$zpm_sha" "$zpm_archive" | sha256sum --check --strict -
+          mkdir -p "$zpm_root"
+          tar --extract --gzip --file "$zpm_archive" --directory "$zpm_root" --strip-components=1
+          "$SIG" build-exe --Sig-lib-dir "$SIG_LIB_DIR" -OReleaseSafe --dep sql \
+            "-Mroot=$zpm_root/tests/test_sql_change_log.sig" "-Msql=$zpm_root/src/core/sql.sig" \
+            "-femit-bin=$RUNNER_TEMP/sql-change-log"
+          "$RUNNER_TEMP/sql-change-log" | tee evidence/change-log-contract.txt
       - name: Check the WAL, restart and joined query contracts on 262144 facts
         run: |
           set -euo pipefail
