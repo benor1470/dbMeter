@@ -104,6 +104,8 @@ class MatrixAndBankTests(unittest.TestCase):
                          [job for job in source_jobs['include'] if job['kind'] != 'paired'])
         self.assertEqual({job['suite'] for job in release_jobs['include'] if job['kind'] == 'live'},
                          {'size-scaling', 'sales-subset', 'sales-full'})
+        self.assertEqual([job['size_partition'] for job in release_jobs['include'] if job['suite'] == 'size-scaling'],
+                         [100000, 1000000])
 
     def test_identical_source_profile_does_not_repeat_paired_campaign(self):
         source = {'revision': 'same', 'capacity_profile': {'tables': 32}}

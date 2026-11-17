@@ -79,6 +79,7 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.benchmark) }}
     env:
       BENCHMARK_PROFILE: ${{ (github.event_name == 'pull_request' || inputs.qualification) && 'qualification' || 'smoke' }}
+      BENCHMARK_SIZE_PARTITION: ${{ matrix.size_partition || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -116,7 +117,10 @@ jobs:
         if: matrix.kind == 'live'
         env:
           BENCHMARK_SUITE: ${{ matrix.suite }}
-        run: python ci/live_benchmark.py --suite "$BENCHMARK_SUITE" --profile "$BENCHMARK_PROFILE"
+        run: |
+          partition=()
+          if [[ -n "$BENCHMARK_SIZE_PARTITION" ]]; then partition=(--size-partition "$BENCHMARK_SIZE_PARTITION"); fi
+          python ci/live_benchmark.py --suite "$BENCHMARK_SUITE" --profile "$BENCHMARK_PROFILE" "${partition[@]}"
       - name: Selected original reads for optimization diagnostics, never merge qualification
         if: matrix.kind == 'diagnostic'
         env:
@@ -124,15 +128,20 @@ jobs:
         run: python ci/supported_benchmark.py --suite "$BENCHMARK_SUITE"
       - name: Always publish the complete comparison, including losses and gaps
         if: always() && matrix.kind == 'live'
-        run: python ci/evidence.py suite --suite '${{ matrix.suite }}'
+        env:
+          BENCHMARK_SUITE: ${{ matrix.suite }}
+        run: |
+          partition=()
+          if [[ -n "$BENCHMARK_SIZE_PARTITION" ]]; then partition=(--size-partition "$BENCHMARK_SIZE_PARTITION"); fi
+          python ci/evidence.py suite --suite "$BENCHMARK_SUITE" "${partition[@]}"
       - name: Same-runner baseline/candidate AB BA AB comparison
         if: matrix.kind == 'paired'
         run: python ci/paired_benchmark.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ matrix.kind }}-${{ matrix.suite }}
-          path: reports/live/${{ matrix.suite }}/
+          name: ${{ matrix.kind }}-${{ matrix.suite }}${{ matrix.size_partition && format('-{0}', matrix.size_partition) || '' }}
+          path: reports/live/${{ matrix.suite }}${{ matrix.size_partition && format('-{0}', matrix.size_partition) || '' }}/
           if-no-files-found: error
           retention-days: 30
 

@@ -15,6 +15,21 @@ from runner import actions_context, validate_same_run
 
 
 class GateContracts(unittest.TestCase):
+    def test_size_partitions_cover_each_original_case_once(self):
+        first = set(cases('size-scaling', 100000))
+        second = set(cases('size-scaling', 1000000))
+        self.assertFalse(first & second)
+        self.assertEqual(first | second, set(cases('size-scaling')))
+        self.assertTrue(evidence.complete_partitions('size-scaling', [1000000, 100000]))
+        self.assertTrue(evidence.complete_partitions('size-scaling', [None]))
+        for incomplete in ([], [100000], [100000, 100000], [None, 100000, 1000000]):
+            self.assertFalse(evidence.complete_partitions('size-scaling', incomplete))
+        self.assertFalse(evidence.complete_partitions('sales-full', [100000, 1000000]))
+        with self.assertRaises(ValueError):
+            cases('sales-full', 100000)
+        with self.assertRaises(ValueError):
+            cases('size-scaling', 512)
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

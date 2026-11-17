@@ -9,8 +9,8 @@ import statistics
 import subprocess
 import xml.etree.ElementTree as ET
 
-from bootstrap import ROOT, VERSIONS
-from live_benchmark import cases, check_original_inputs, PROFILES, ENGINES
+from bootstrap import ROOT, SIZE_PARTITIONS, VERSIONS
+from live_benchmark import campaign_scope, cases, check_original_inputs, PROFILES, ENGINES
 from runner import validate_ci, actions_context, validate_same_run
 
 SUITES = ('size-scaling', 'sales-subset', 'sales-full')
@@ -106,7 +106,8 @@ def summarize(folder):
     suite = campaign['suite']
     if suite not in SUITES or campaign['profile'] not in PROFILES:
         raise ValueError('Unknown suite/profile')
-    expected = {f'{name}/{clients}' for name, clients in cases(suite)}
+    size_partition = campaign.get('size_partition')
+    expected = {f'{name}/{clients}' for name, clients in cases(suite, size_partition)}
     if set(campaign['expected_cases']) != expected or campaign['policy'] != PROFILES[campaign['profile']]:
         raise ValueError('Declared benchmark matrix/policy changed')
     issues = list(campaign.get('gaps', []))
@@ -191,7 +192,7 @@ def summarize(folder):
                                 and all(ram['median_p99_us'] <= MAX_P99_RATIO * engines[e]['median_p99_us'] for e in ('postgres', 'irdb')))
         rows.append(row)
     qualifies = campaign['profile'] == 'qualification' and not issues and all(row['advantage'] for row in rows)
-    return dict(schema=1, suite=suite, profile=campaign['profile'], qualified=qualifies,
+    return dict(schema=1, suite=suite, profile=campaign['profile'], qualified=qualifies, size_partition=size_partition,
                 source_revision=campaign['ramsql']['source']['revision'], binary_sha256=campaign['ramsql']['binary_sha256'],
                 input_revision=campaign['input_revision'], ci=campaign.get('ci', {}),
                 correctness_evidence_passed=not correctness_issues, correctness_issues=correctness_issues,
@@ -199,7 +200,8 @@ def summarize(folder):
 
 
 def markdown(summary):
-    lines = [f"## Live {summary['suite']} — {summary['profile']}", '',
+    scope = campaign_scope(summary['suite'], summary.get('size_partition'))
+    lines = [f"## Live {scope} — {summary['profile']}", '',
              '**QUALIFIED significant advantage**' if summary['qualified'] else '**NOT QUALIFIED — keep the PR unmerged; no README performance claim.**', '',
              'All rates are queries/transactions per second at the original JDBC boundary. Bold ratios highlight at least 2× measured leads, including limited leads that do not pass the full gate.', '',
              '| Workload / clients | RAMSQL | PostgreSQL | IRDB | RAMSQL / fastest reference |',
@@ -243,21 +245,32 @@ def publish(text):
             stream.write(text)
 
 
+def complete_partitions(suite, partitions):
+    if partitions == [None]:
+        return True
+    return (suite == 'size-scaling' and len(partitions) == len(SIZE_PARTITIONS)
+            and set(partitions) == set(SIZE_PARTITIONS))
+
+
 def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest='verb', required=True)
     suite = sub.add_parser('suite')
     suite.add_argument('--suite', required=True, choices=SUITES)
+    suite.add_argument('--size-partition', type=int, choices=SIZE_PARTITIONS)
     gate = sub.add_parser('gate')
     gate.add_argument('--root', type=Path, required=True)
     args = parser.parse_args()
     if args.verb == 'suite':
-        folder = ROOT / 'reports/live' / args.suite
+        folder = ROOT / 'reports/live' / campaign_scope(args.suite, args.size_partition)
         folder.mkdir(parents=True, exist_ok=True)
         try:
             summary = summarize(folder)
+            if summary['suite'] != args.suite or summary['size_partition'] != args.size_partition:
+                raise ValueError('Evidence differs from the scheduled benchmark partition')
         except (OSError, ValueError, KeyError, TypeError) as error:
-            summary = dict(suite=args.suite, profile='unknown', qualified=False, rows=[], issues=['Incomplete/unreadable evidence: ' + str(error)])
+            summary = dict(suite=args.suite, profile='unknown', qualified=False, size_partition=args.size_partition,
+                           rows=[], issues=['Incomplete/unreadable evidence: ' + str(error)])
         passed = summary.get('correctness_evidence_passed') is True
         (folder / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
         text = markdown(summary)
@@ -273,18 +286,21 @@ def main():
         suites_by_name = defaultdict(list)
         for path in folders:
             try:
-                suites_by_name[json.loads(path.read_text())['suite']].append(path.parent)
+                name = json.loads(path.read_text())['suite']
+                if name not in SUITES:
+                    raise ValueError('Unknown campaign suite')
+                suites_by_name[name].append(path.parent)
             except (OSError, ValueError, KeyError, TypeError) as error:
                 errors.append('Unreadable campaign artifact: ' + str(error))
         for name in SUITES:
-            found = suites_by_name[name]
-            if len(found) != 1:
-                errors.append(name + ': exactly one complete artifact is required')
-                continue
+            entries = []
             try:
-                summaries.append(summarize(found[0]))
+                entries = [summarize(path) for path in suites_by_name[name]]
             except (ValueError, KeyError, OSError, TypeError) as error:
                 errors.append(name + ': ' + str(error))
+            if not complete_partitions(name, [entry['size_partition'] for entry in entries]):
+                errors.append(name + ': one full artifact or the complete disjoint size partitions are required')
+            summaries.extend(entries)
         for key in ('source_revision', 'binary_sha256', 'input_revision'):
             if len({s[key] for s in summaries}) != 1:
                 errors.append('Inconsistent candidate/input provenance: ' + key)
@@ -293,7 +309,7 @@ def main():
                 validate_same_run(summary['ci'], current_ci)
             except ValueError as error:
                 errors.append(str(error))
-        passed = len(summaries) == 3 and not errors and all(s['qualified'] for s in summaries)
+        passed = not errors and all(s['qualified'] for s in summaries)
         result = dict(schema=1, qualified=passed, merge_allowed=passed, minimum_ratio=MIN_RATIO, max_p99_ratio=MAX_P99_RATIO,
                       workflow_run=f"https://github.com/{os.environ.get('GITHUB_REPOSITORY', '')}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}",
                       run_attempt=os.environ.get('GITHUB_RUN_ATTEMPT'), errors=errors, suites=summaries)

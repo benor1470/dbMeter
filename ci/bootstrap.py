@@ -16,6 +16,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parent.parent
 RUNTIME = ROOT / '.ci-runtime'
 VERSIONS = json.loads((ROOT / 'ci/versions.json').read_text())
+SIZE_PARTITIONS = (100000, 1000000)
 
 
 def digest(path):
@@ -51,7 +52,8 @@ def workflow_matrices(versions, paired_only=False):
         raise ValueError('Paired-only dispatch requires distinct pinned source builds')
     jobs = []
     if not paired_only:
-        jobs = [dict(suite=suite, kind='live') for suite in ('size-scaling', 'sales-subset', 'sales-full')]
+        jobs = [dict(suite='size-scaling', kind='live', size_partition=size) for size in SIZE_PARTITIONS]
+        jobs.extend(dict(suite=suite, kind='live') for suite in ('sales-subset', 'sales-full'))
         jobs.extend(dict(suite=suite, kind='diagnostic') for suite in ('sales-subset', 'sales-full'))
     if paired:
         suite = versions.get('paired_suite', 'sales-subset')

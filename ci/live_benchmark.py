@@ -14,7 +14,7 @@ import sys
 import time
 import uuid
 
-from bootstrap import ROOT, RUNTIME, VERSIONS, digest
+from bootstrap import ROOT, RUNTIME, SIZE_PARTITIONS, VERSIONS, digest
 from runner import actions_context, host_snapshot
 
 ENGINES = ('ramsql', 'postgres', 'irdb')
@@ -51,9 +51,19 @@ def integral_bank_words(spec, suite, table_slots):
     return configured
 
 
-def cases(suite):
+def campaign_scope(suite, size_partition=None):
+    if size_partition is None:
+        return suite
+    if suite != 'size-scaling' or type(size_partition) is not int or size_partition not in SIZE_PARTITIONS:
+        raise ValueError('Invalid size-scaling partition')
+    return f'{suite}-{size_partition}'
+
+
+def cases(suite, size_partition=None):
+    campaign_scope(suite, size_partition)
     if suite == 'size-scaling':
-        return [(f's{size}_{kind}', clients) for size in (100000, 1000000)
+        sizes = SIZE_PARTITIONS if size_partition is None else (size_partition,)
+        return [(f's{size}_{kind}', clients) for size in sizes
                 for kind in ('pk', 'filter', 'topn') for clients in (1, 8)]
     return [('mixed', clients) for clients in (1, 8)]
 
@@ -142,14 +152,16 @@ def fresh_seed(original, target):
 
 
 class Campaign:
-    def __init__(self, suite, profile):
+    def __init__(self, suite, profile, size_partition=None):
         revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
         ci_context = actions_context(revision)
         self.suite, self.profile = suite, profile
         self.policy = PROFILES[profile]
-        self.out = ROOT / 'reports/live' / suite
+        self.cases = cases(suite, size_partition)
+        scope = campaign_scope(suite, size_partition)
+        self.out = ROOT / 'reports/live' / scope
         self.out.mkdir(parents=True, exist_ok=False)
-        self.work = RUNTIME / suite
+        self.work = RUNTIME / scope
         self.work.mkdir(parents=True, exist_ok=False)
         self.port = {}
         for engine in ENGINES:
@@ -168,8 +180,8 @@ class Campaign:
         self.folder = ROOT / 'examples' / {'size-scaling': 'size-scaling', 'sales-subset': 'sales-agg-subset', 'sales-full': 'sales-agg'}[suite]
         self.configs = {}
         self.data_files = []
-        self.report = dict(schema=1, suite=suite, profile=profile, policy=self.policy,
-                           expected_cases=[f'{name}/{clients}' for name, clients in cases(suite)],
+        self.report = dict(schema=1, suite=suite, profile=profile, policy=self.policy, size_partition=size_partition,
+                           expected_cases=[f'{name}/{clients}' for name, clients in self.cases],
                            input_revision=revision, ci=ci_context,
                            environment=dict(platform=platform.platform(), logical_cpus=os.cpu_count(),
                                             memory_total_bytes=os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES'),
@@ -431,7 +443,7 @@ class Campaign:
                             self.psql(source)
                         if self.command(f'ramsql-trial{trial + 1}-checks', self.java('check', engine)):
                             raise RuntimeError('Fresh RAMSQL data failed correctness')
-                    for scenario, clients in cases(self.suite):
+                    for scenario, clients in self.cases:
                         name = f'{engine}-trial{trial + 1}-{scenario}-{clients}'
                         target = self.out / name
                         tail = ['--set', f'load.threads={clients}', '--set', 'load.warmup=' + self.policy['warmup'],
@@ -454,8 +466,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--suite', required=True, choices=('size-scaling', 'sales-subset', 'sales-full'))
     parser.add_argument('--profile', required=True, choices=PROFILES)
+    parser.add_argument('--size-partition', type=int, choices=SIZE_PARTITIONS)
     args = parser.parse_args()
-    campaign = Campaign(args.suite, args.profile)
+    campaign = Campaign(args.suite, args.profile, args.size_partition)
     try:
         campaign.run()
     except BaseException as error:
