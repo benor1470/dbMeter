@@ -22,6 +22,8 @@ def paired_cases(focus, suite='sales-subset'):
             return tuple(f's{size}_pk/{clients}' for size in (100000, 1000000) for clients in (1, 8))
         if focus == 's1000000_filter':
             return tuple(f'{focus}/{clients}' for clients in (1, 8))
+        if focus == 's1000000_topn':
+            return (f'{focus}/1',)
         raise ValueError('Unknown original size-scaling paired focus')
     if suite not in MIXED or focus not in MIXED[suite]:
         raise ValueError('Paired focus must name an existing scenario in its original sales suite')

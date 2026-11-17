@@ -82,6 +82,7 @@ class PairedContracts(unittest.TestCase):
                          ('s100000_pk/1', 's100000_pk/8', 's1000000_pk/1', 's1000000_pk/8'))
         self.assertEqual(paired_cases('s1000000_filter', 'size-scaling'),
                          ('s1000000_filter/1', 's1000000_filter/8'))
+        self.assertEqual(paired_cases('s1000000_topn', 'size-scaling'), ('s1000000_topn/1',))
         with self.assertRaisesRegex(ValueError, 'original size-scaling paired focus'):
             paired_cases('s100000_topn', 'size-scaling')
 
