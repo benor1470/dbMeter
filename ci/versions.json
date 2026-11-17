@@ -1,22 +1,96 @@
 {
   "ramsql": {
-    "revision": "f569015b541c04cfc10c8050841b182c661300b3",
-    "url": "https://github.com/SB0LTD/ramsql/archive/f569015b541c04cfc10c8050841b182c661300b3.tar.gz",
-    "sha256": "7bb87ae0c883e9b776dee9cea6184f765247cd242f3397089ff4c17785a575d8",
+    "revision": "93a2864312ff3064034ed84f8050e15d8dac5f09",
+    "url": "https://github.com/SB0LTD/ramsql/archive/93a2864312ff3064034ed84f8050e15d8dac5f09.tar.gz",
+    "sha256": "d0fc47a4590cbdd2776f51ffc6435342bd274c020034b55b6fa823f13e2f572a",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
-      "text-bytes": 200
+      "text-bytes": 200,
+      "integral-version-banks": true
+    },
+    "integral_bank_words": {
+      "sales-full": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
     }
   },
   "ramsql_baseline": {
-    "revision": "ab95d76eeaba7255ce4da2f43a0d8e6c2adf40da",
-    "url": "https://github.com/SB0LTD/ramsql/archive/ab95d76eeaba7255ce4da2f43a0d8e6c2adf40da.tar.gz",
-    "sha256": "225abd9f2a5ac10553719234d0e349cc277f6da6990af5d80201c95432e4e39d",
+    "revision": "93a2864312ff3064034ed84f8050e15d8dac5f09",
+    "url": "https://github.com/SB0LTD/ramsql/archive/93a2864312ff3064034ed84f8050e15d8dac5f09.tar.gz",
+    "sha256": "d0fc47a4590cbdd2776f51ffc6435342bd274c020034b55b6fa823f13e2f572a",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
-      "text-bytes": 200
+      "text-bytes": 200,
+      "integral-version-banks": true
+    },
+    "integral_bank_words": {
+      "sales-full": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
     }
   },
   "sig": {
@@ -37,11 +111,5 @@
     "url": "https://www.interactivereporting.com/irdb/irdb_core10.zip",
     "sha256": "1cdcebfb5e0c0a2752affdeb8d84681dc6040227660602d3327c1eff0327f135"
   },
-  "postgres_image": "postgres:18.3-bookworm@sha256:80630f83606d8db77d30b3851b16a9f78be2d0d4dda6f7b82a1fdca5ebe3acba",
-  "paired_focus": "q4_segment_discount_rollup",
-  "paired_suite": "sales-full",
-  "paired_dependency_manifests": {
-    "baseline": "0e308cf51dd68de4745bd16a53f28348d5c35433d36255a2924a994d7aedda68",
-    "candidate": "835d42c35d6db1424f6292a71ecd06d3c7356f531c872f48672bd36987f7f779"
-  }
+  "postgres_image": "postgres:18.3-bookworm@sha256:80630f83606d8db77d30b3851b16a9f78be2d0d4dda6f7b82a1fdca5ebe3acba"
 }
