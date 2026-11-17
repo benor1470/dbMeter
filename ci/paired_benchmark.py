@@ -1,5 +1,6 @@
 """Same-VM RAMSQL control/candidate diagnostic; never all-engine qualification."""
 import json
+import re
 import statistics
 import sys
 
@@ -25,9 +26,18 @@ def validate_sources(proofs):
     for mode, key in (('baseline', 'ramsql_baseline'), ('candidate', 'ramsql')):
         if proofs[mode]['source'] != VERSIONS[key]:
             raise ValueError('Unpinned paired source: ' + mode)
-    for key in ('dependency_manifest_sha256', 'toolchain', 'build_arguments'):
+    for key in ('toolchain', 'build_arguments'):
         if not proofs['baseline'].get(key) or proofs['baseline'][key] != proofs['candidate'].get(key):
-            raise ValueError('Paired library/toolchain/build arguments differ: ' + key)
+            raise ValueError('Paired toolchain/build arguments differ: ' + key)
+    manifests = {mode: proofs[mode].get('dependency_manifest_sha256', '') for mode in ('baseline', 'candidate')}
+    pins = VERSIONS.get('paired_dependency_manifests')
+    if not all(isinstance(value, str) and re.fullmatch(r'[0-9a-f]{64}', value) for value in manifests.values()):
+        raise ValueError('Missing paired dependency manifest digest')
+    if pins is not None:
+        if manifests != pins:
+            raise ValueError('Paired dependency manifests differ from the explicit pins')
+    elif manifests['baseline'] != manifests['candidate']:
+        raise ValueError('Paired dependency manifests differ')
 
 
 def summarize_pairs(folder, campaign):
@@ -140,7 +150,7 @@ class PairedCampaign(Campaign):
         for row in result['rows']:
             lines.append('| ' + ' | '.join([row['case'], f"{row['engines']['baseline']['median_qps']:.2f}",
                 f"{row['engines']['candidate']['median_qps']:.2f}", ', '.join(f'{r:.3f}' for r in row['paired_qps_ratios'])]) + ' |')
-        lines += ['', 'AB / BA / AB, same runner and library/toolchain, fresh RAMSQL load and original full checks per variant/pair, fresh JVM per case, original 5s ramp / 15s warmup / 60s measure. Every trial, p99, source/binary checksum and host pressure snapshot is retained. No post-hoc subset is substituted.', '']
+        lines += ['', 'AB / BA / AB, same runner and toolchain, pinned dependency manifests, fresh RAMSQL load and original full checks per variant/pair, fresh JVM per case, original 5s ramp / 15s warmup / 60s measure. Every trial, p99, source/binary checksum and host pressure snapshot is retained. No post-hoc subset is substituted.', '']
         lines += ['- ' + gap for gap in self.report['gaps']]
         for error in (self.report.get('error'), result.get('error')):
             if error:

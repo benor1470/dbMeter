@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
 from bootstrap import VERSIONS
@@ -82,6 +83,15 @@ class PairedContracts(unittest.TestCase):
         self.campaign['paired_sources']['baseline']['dependency_manifest_sha256'] = 'f' * 64
         with self.assertRaises(ValueError):
             summarize_pairs(self.folder, self.campaign)
+
+    def test_explicitly_pinned_library_change(self):
+        self.campaign['paired_sources']['baseline']['dependency_manifest_sha256'] = 'f' * 64
+        pins = {'baseline': 'f' * 64, 'candidate': 'e' * 64}
+        with patch.dict(VERSIONS, paired_dependency_manifests=pins):
+            self.assertEqual(len(summarize_pairs(self.folder, self.campaign)['rows']), 4)
+            self.campaign['paired_sources']['candidate']['dependency_manifest_sha256'] = 'f' * 64
+            with self.assertRaisesRegex(ValueError, 'explicit pins'):
+                summarize_pairs(self.folder, self.campaign)
 
     def test_failed_fresh_check_rejected(self):
         path = self.folder / 'baseline-pair1-checks.xml'

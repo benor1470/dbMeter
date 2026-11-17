@@ -133,7 +133,9 @@ SQL/data/expected CSV files are changed.
 The `paired-sales-subset` job runs a separately pinned RAMSQL baseline and
 candidate on one VM in AB / BA / AB order. The matrix omits this job when the
 two source specifications are identical. Both artifacts must have identical
-dependency-manifest hashes, toolchain pins and build arguments. For the typed
+toolchain pins and build arguments. By default their dependency manifests must
+also have identical hashes. For a ZPM-only experiment, pin each exact manifest
+hash with `paired_dependency_manifests` in `versions.json`. For the typed
 group experiment the two server commits differ only by the opt-in and changelog;
 the dependency includes the same sparse-predicate path in both variants.
 
