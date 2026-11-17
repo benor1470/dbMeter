@@ -65,6 +65,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Install debugger for the separate JDBC path probe
+        if: matrix.variant == 'ramsql'
+        run: |
+          if ! command -v gdb; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends gdb
+          fi
       - name: Verify exact prepared-PK wire and unchanged JDBC path
         if: matrix.variant == 'ramsql'
         run: python ci/prepared_pk_path_probe.py
