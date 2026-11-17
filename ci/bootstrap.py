@@ -38,7 +38,10 @@ def workflow_matrices(versions):
     jobs = [dict(suite=suite, kind='live') for suite in ('size-scaling', 'sales-subset', 'sales-full')]
     jobs.extend(dict(suite=suite, kind='diagnostic') for suite in ('sales-subset', 'sales-full'))
     if paired:
-        jobs.append(dict(suite='sales-subset', kind='paired'))
+        suite = versions.get('paired_suite', 'sales-subset')
+        if suite not in ('sales-subset', 'sales-full'):
+            raise ValueError('Paired suite must be an original sales suite')
+        jobs.append(dict(suite=suite, kind='paired'))
     return builds, {'include': jobs}
 
 

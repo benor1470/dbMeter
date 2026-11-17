@@ -10,16 +10,17 @@ from live_benchmark import Campaign
 from runner import host_snapshot
 
 ORDER = (('baseline', 'candidate'), ('candidate', 'baseline'), ('baseline', 'candidate'))
+SUITE = VERSIONS.get('paired_suite', 'sales-subset')
 FOCUS = VERSIONS.get('paired_focus', 's3_top_products')
 
 
-def paired_cases(focus):
-    if focus not in MIXED['sales-subset']:
-        raise ValueError('Paired focus must name an existing original subset scenario')
+def paired_cases(focus, suite='sales-subset'):
+    if suite not in MIXED or focus not in MIXED[suite]:
+        raise ValueError('Paired focus must name an existing scenario in its original sales suite')
     return ('mixed/1', 'mixed/8', focus + '/1', focus + '/8')
 
 
-CASES = paired_cases(FOCUS)
+CASES = paired_cases(FOCUS, SUITE)
 
 
 def validate_sources(proofs):
@@ -44,7 +45,7 @@ def summarize_pairs(folder, campaign):
     validate_sources(campaign['paired_sources'])
     if campaign.get('diagnostic_only') is not True or campaign.get('merge_allowed') is not False:
         raise ValueError('Paired measurements must remain diagnostic')
-    if campaign['expected_cases'] != list(CASES):
+    if campaign['suite'] != SUITE or campaign['expected_cases'] != list(CASES):
         raise ValueError('Paired matrix changed')
     if tuple(tuple(order) for order in campaign.get('paired_order', [])) != ORDER:
         raise ValueError('Paired order changed')
@@ -62,7 +63,7 @@ def summarize_pairs(folder, campaign):
         values[key] = read_run(folder, campaign, run)
     if values.keys() != expected:
         raise ValueError('Missing paired trial; partial runs are not scored')
-    required = {'a_totals'} | MIXED['sales-subset']
+    required = {'a_totals'} | MIXED[SUITE]
     for pair in (1, 2, 3):
         for mode in ('baseline', 'candidate'):
             check_xml(folder / f'{mode}-pair{pair}-checks.xml', required)
@@ -81,7 +82,7 @@ def summarize_pairs(folder, campaign):
 
 class PairedCampaign(Campaign):
     def __init__(self):
-        super().__init__('sales-subset', 'qualification')
+        super().__init__(SUITE, 'qualification')
         self.candidate_binary = self.binary
         self.baseline_binary = RUNTIME / 'downloaded-baseline/ramsql/bin/ramsql'
         self.baseline_binary.chmod(0o755)
@@ -96,7 +97,8 @@ class PairedCampaign(Campaign):
         self.save()
 
     def run(self):
-        if self.command('original-generator', [sys.executable, '-I', str(self.folder / 'gen.py')]):
+        generator = 'gen_expected.py' if SUITE == 'sales-full' else 'gen.py'
+        if self.command('original-generator', [sys.executable, '-I', str(self.folder / generator)]):
             raise RuntimeError('Original generator failed')
         self.setup()
         if not all(self.report['checks'].get(engine) for engine in ('ramsql', 'postgres', 'irdb')):

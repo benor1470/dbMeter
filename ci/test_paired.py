@@ -10,29 +10,31 @@ import xml.etree.ElementTree as ET
 from bootstrap import VERSIONS
 from evidence import MIXED
 from live_benchmark import PROFILES
-from paired_benchmark import CASES, ORDER, summarize_pairs, paired_cases
+from paired_benchmark import CASES, ORDER, SUITE, summarize_pairs, paired_cases
 
 
 class PairedContracts(unittest.TestCase):
     def setUp(self):
+        self.enterContext(patch.dict(VERSIONS))
+        VERSIONS.pop('paired_dependency_manifests', None)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.folder = Path(self.directory.name)
         proofs = {mode: dict(source=copy.deepcopy(VERSIONS[key]), binary_sha256=char * 64,
             dependency_manifest_sha256='e' * 64, toolchain=VERSIONS['sig'], build_arguments=['build', '-Doptimize=ReleaseFast'])
             for mode, key, char in (('baseline', 'ramsql_baseline', 'a'), ('candidate', 'ramsql', 'b'))}
-        self.campaign = dict(suite='sales-subset', profile='qualification', policy=PROFILES['qualification'],
+        self.campaign = dict(suite=SUITE, profile='qualification', policy=PROFILES['qualification'],
             diagnostic_only=True, merge_allowed=False, expected_cases=list(CASES), paired_order=ORDER, paired_sources=proofs, runs=[])
         for pair, order in enumerate(ORDER, 1):
             for mode in order:
                 xml = ET.Element('testsuite')
-                for name in {'a_totals'} | MIXED['sales-subset']:
+                for name in {'a_totals'} | MIXED[SUITE]:
                     ET.SubElement(xml, 'testcase', name=name)
                 ET.ElementTree(xml).write(self.folder / f'{mode}-pair{pair}-checks.xml')
                 for case in CASES:
                     scenario, clients = case.split('/')
                     count = 200 if mode == 'candidate' else 100
-                    names = MIXED['sales-subset'] if scenario == 'mixed' else {scenario}
+                    names = MIXED[SUITE] if scenario == 'mixed' else {scenario}
                     raw = dict(dbmeterReport=1, measuredStart=100000, measuredEnd=160000,
                         database=dict(label='ramsql'), nodes=[dict(settings=dict(threads=int(clients), duration='PT1M', warmup='PT15S', rampUp='PT5S'))],
                         scenarios={name: dict(count=count, errors=0, latencyMicros=dict(subBits=5, count=count, min=10, max=10, buckets={'10': count})) for name in names})
@@ -55,6 +57,10 @@ class PairedContracts(unittest.TestCase):
         for focus in ('mixed', 'new_faster_query', ''):
             with self.assertRaises(ValueError):
                 paired_cases(focus)
+        case = 'q1_region_month'
+        self.assertEqual(paired_cases(case, 'sales-full'), ('mixed/1', 'mixed/8', case + '/1', case + '/8'))
+        with self.assertRaises(ValueError):
+            paired_cases(case, 'sales-subset')
 
     def test_missing_trial_rejected(self):
         self.campaign['runs'].pop()

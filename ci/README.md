@@ -130,7 +130,7 @@ SQL/data/expected CSV files are changed.
 
 ## Same-runner candidate/control experiments
 
-The `paired-sales-subset` job runs a separately pinned RAMSQL baseline and
+The paired sales job runs a separately pinned RAMSQL baseline and
 candidate on one VM in AB / BA / AB order. The matrix omits this job when the
 two source specifications are identical. Both artifacts must have identical
 toolchain pins and build arguments. By default their dependency manifests must
@@ -139,7 +139,7 @@ hash with `paired_dependency_manifests` in `versions.json`. For the typed
 group experiment the two server commits differ only by the opt-in and changelog;
 the dependency includes the same sparse-predicate path in both variants.
 
-Each variant/pair loads fresh original 1M data and passes all seven original
+Each variant/pair loads fresh original sales data and passes all seven original
 checks before timing the original weighted mix and an explicitly pinned
 original focused case at 1/8
 clients. Every timing uses the original 5s ramp / 15s warmup / 60s measure and a
@@ -152,7 +152,9 @@ Paired artifacts are named `paired-*`, declare `diagnostic_only=true` and
 They isolate an execution change without turning a selected-case improvement
 into permission to merge or claim universal superiority.
 
-`versions.json` pins `paired_focus` to an existing original subset scenario.
+`versions.json` pins `paired_focus` to an original scenario in `paired_suite`.
+Supported suites are `sales-subset` (1M fact rows, the default) and `sales-full`
+(5M fact rows).
 The first experiment used top-products for typed multi-aggregation; the next
 uses segment/discount for dimension group IDs. Changing the diagnostic focus
 does not change any original SQL, expected CSV, weighted mix or advantage-gate
