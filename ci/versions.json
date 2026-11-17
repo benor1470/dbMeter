@@ -1,8 +1,8 @@
 {
   "ramsql": {
-    "revision": "0c060e50da82b8afceb1ddb63aabfe151f707c6b",
-    "url": "https://github.com/SB0LTD/ramsql/archive/0c060e50da82b8afceb1ddb63aabfe151f707c6b.tar.gz",
-    "sha256": "6828f723402781ced1b45311146371245dd83d333117d790b6a65047794486f8",
+    "revision": "f569015b541c04cfc10c8050841b182c661300b3",
+    "url": "https://github.com/SB0LTD/ramsql/archive/f569015b541c04cfc10c8050841b182c661300b3.tar.gz",
+    "sha256": "7bb87ae0c883e9b776dee9cea6184f765247cd242f3397089ff4c17785a575d8",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -38,10 +38,10 @@
     "sha256": "1cdcebfb5e0c0a2752affdeb8d84681dc6040227660602d3327c1eff0327f135"
   },
   "postgres_image": "postgres:18.3-bookworm@sha256:80630f83606d8db77d30b3851b16a9f78be2d0d4dda6f7b82a1fdca5ebe3acba",
-  "paired_focus": "q1_region_month",
+  "paired_focus": "q4_segment_discount_rollup",
   "paired_suite": "sales-full",
   "paired_dependency_manifests": {
     "baseline": "0e308cf51dd68de4745bd16a53f28348d5c35433d36255a2924a994d7aedda68",
-    "candidate": "7b80ef51d6530a0a8ede653e77b27bfea3cbcf3e151f405b836951599a46e089"
+    "candidate": "835d42c35d6db1424f6292a71ecd06d3c7356f531c872f48672bd36987f7f779"
   }
 }
