@@ -85,6 +85,13 @@ def source_capacity_flags(spec):
     return flags
 
 
+def source_read_cache_bytes(spec):
+    size = spec.get('read_cache_bytes', 0)
+    if type(size) is not int or not 0 <= size < 2**64:
+        raise ValueError('Invalid pinned RAMSQL read cache request')
+    return size
+
+
 def install_release(spec, runtime):
     """Install only the qualified Linux binary from the pinned release archive."""
     release = spec['release']
@@ -164,6 +171,9 @@ def main():
         compiler = next((runtime / 'sdk').rglob('bin/sig'))
         library = compiler.parent.parent / 'lib'
         checkout = next((runtime / 'source').iterdir())
+        manifest_digest = digest(checkout / 'build.sig.zon')
+        if 'dependency_manifest_sha256' in spec and manifest_digest != spec['dependency_manifest_sha256']:
+            raise ValueError('RAMSQL dependency manifest differs from the source pin')
         # Use the product's exact published no-libc runtime preparation, not
         # the older SDK runtime that requires libc and disables native workers.
         prepared = runtime / 'prepared-runtime'
@@ -180,7 +190,7 @@ def main():
                 raise ValueError(f'RAMSQL executable capacity differs from its pin: {name}')
         (runtime / 'ramsql-provenance.json').write_text(json.dumps(dict(
             source=spec, toolchain=VERSIONS['sig'], binary_sha256=digest(binary),
-            dependency_manifest_sha256=digest(checkout / 'build.sig.zon'),
+            dependency_manifest_sha256=manifest_digest,
             runtime_preparation=json.loads((prepared / 'runtime-preparation.json').read_text()),
             capabilities=capabilities,
             build_arguments=build_arguments), indent=2) + '\n')

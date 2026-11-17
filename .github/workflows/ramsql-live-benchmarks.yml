@@ -1,4 +1,4 @@
-name: Live RAMSQL comparison
+name: Live RAMSQL opt-in cache diagnostic
 
 on:
   pull_request:
@@ -146,7 +146,7 @@ jobs:
           retention-days: 30
 
   advantage:
-    name: Significant advantage required before merge
+    name: Compare the pinned cache configuration with formal thresholds
     if: always() && !(github.event_name == 'workflow_dispatch' && inputs.paired_only)
     needs: [build, benchmark]
     runs-on: ubuntu-24.04

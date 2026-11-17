@@ -14,7 +14,7 @@ import sys
 import time
 import uuid
 
-from bootstrap import ROOT, RUNTIME, SIZE_PARTITIONS, VERSIONS, digest
+from bootstrap import ROOT, RUNTIME, SIZE_PARTITIONS, VERSIONS, digest, source_read_cache_bytes
 from runner import actions_context, host_snapshot
 
 ENGINES = ('ramsql', 'postgres', 'irdb')
@@ -25,6 +25,18 @@ PROFILES = {'smoke': dict(trials=1, warmup='2s', duration='3s', ramp='1s'),
 
 # Normalized input manifest from reviewer revision b7d17917646d84d89afd211f7d2b8c5b6bd98679.
 ORIGINAL_INPUTS_SHA256 = '4cdaa752aed6298d69d17ac655f203f3df1bd8437e4ecdbfd178a55749515235'
+
+
+def read_cache_admission(request, capacity):
+    if not isinstance(capacity, dict):
+        raise ValueError('RAMSQL cache capacity probe is missing')
+    fields = ('read_cache_bytes', 'read_cache_region_bytes', 'read_cache_entries', 'read_cache_rows_per_entry')
+    observed = {name: capacity.get(name) for name in fields}
+    if (capacity.get('startup_fits') is not True
+            or not all(type(value) is int and value > 0 for value in observed.values())
+            or not observed['read_cache_bytes'] <= min(request, observed['read_cache_region_bytes'])):
+        raise ValueError('RAMSQL did not admit the pinned read cache request')
+    return dict(requested_bytes=request, **observed)
 
 
 def ramsql_banks(suite, table_slots):
@@ -265,8 +277,16 @@ class Campaign:
                     if planned.get('table_integral_words') != integral_words:
                         raise RuntimeError('RAMSQL did not admit the pinned integral table banks')
                     self.report['ramsql_backing_bytes'] = planned['backing_bytes']
+                cache_request = source_read_cache_bytes(self.ramsql_source)
+                if cache_request:
+                    flags = ['--read-cache-bytes', str(cache_request)]
+                    argv += flags
+                    probe += flags
                 self.report['ramsql_server_arguments'] = argv[1:]
-                self.report['ramsql_machine_capacity'] = json.loads(subprocess.check_output(probe, text=True, timeout=30))
+                capacity = json.loads(subprocess.check_output(probe, text=True, timeout=30))
+                self.report['ramsql_machine_capacity'] = capacity
+                if cache_request:
+                    self.report['ramsql_read_cache'] = read_cache_admission(cache_request, capacity)
                 self.save()
             else:
                 server = next((RUNTIME / 'irdb').rglob('irdbServerConsole.dll'))

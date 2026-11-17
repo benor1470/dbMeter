@@ -9,8 +9,8 @@ from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
 import evidence
-from bootstrap import VERSIONS
-from live_benchmark import PROFILES, ENGINES, cases, fresh_seed
+from bootstrap import VERSIONS, source_read_cache_bytes
+from live_benchmark import PROFILES, ENGINES, cases, fresh_seed, read_cache_admission
 from runner import actions_context, validate_same_run
 
 
@@ -47,6 +47,11 @@ class GateContracts(unittest.TestCase):
                              ci=dict(provider='github-actions', repository='benor1470/dbMeter', run_id='123',
                                      run_attempt='1', runner_name='synthetic-unit-fixture', runner_os='Linux', checkout_revision='b' * 40),
                              ramsql=dict(source=copy.deepcopy(source), binary_sha256=image_sha))
+        if 'dependency_manifest_sha256' in source:
+            self.campaign['ramsql']['dependency_manifest_sha256'] = source['dependency_manifest_sha256']
+        cache_request = source_read_cache_bytes(source)
+        if cache_request:
+            self.pin_cache(cache_request)
         for engine in ENGINES:
             xml = ET.Element('testsuite')
             for name in {'a_totals'} | evidence.MIXED['sales-subset']:
@@ -68,6 +73,12 @@ class GateContracts(unittest.TestCase):
         (self.folder / 'campaign.json').write_text(json.dumps(self.campaign))
         return evidence.summarize(self.folder)
 
+    def pin_cache(self, request):
+        capacity = dict(startup_fits=True, read_cache_bytes=request, read_cache_region_bytes=request,
+                        read_cache_entries=1, read_cache_rows_per_entry=1)
+        self.campaign.update(ramsql_server_arguments=['--read-cache-bytes', str(request)],
+                             ramsql_machine_capacity=capacity, ramsql_read_cache=read_cache_admission(request, capacity))
+
     def mutate_raw(self, change, engine='ramsql'):
         for run in self.campaign['runs']:
             if run['engine'] == engine:
@@ -82,6 +93,31 @@ class GateContracts(unittest.TestCase):
         scenario = result['rows'][0]['scenarios']['s1_region']
         self.assertEqual(scenario['ramsql']['median_qps'], 1000 / 60)
         self.assertEqual(scenario['irdb']['median_p99_us'], 24)
+
+    def test_cache_qualification_requires_pinned_request_manifest_and_admission(self):
+        source = dict(VERSIONS['ramsql'], read_cache_bytes=268435456, dependency_manifest_sha256='d' * 64)
+        self.campaign['ramsql'].update(source=source, dependency_manifest_sha256='d' * 64)
+        self.pin_cache(source['read_cache_bytes'])
+        with patch.dict(VERSIONS, ramsql=source):
+            result = self.result()
+            self.assertTrue(result['qualified'])
+            self.assertIn('Opt-in cache diagnostic', evidence.markdown(result))
+            correct = copy.deepcopy(self.campaign)
+            for field, label in (('ramsql_read_cache', 'cache provenance'),
+                                 ('ramsql_machine_capacity', 'cache provenance'),
+                                 ('ramsql_server_arguments', 'cache provenance')):
+                with self.subTest(field=field):
+                    self.campaign = dict(correct)
+                    self.campaign.pop(field)
+                    outcome = self.result()
+                    self.assertFalse(outcome['qualified'])
+                    self.assertTrue(any(label in issue for issue in outcome['issues']))
+            self.campaign = copy.deepcopy(correct)
+            self.campaign['ramsql_server_arguments'][1] = '0'
+            self.assertFalse(self.result()['qualified'])
+            self.campaign = copy.deepcopy(correct)
+            self.campaign['ramsql']['dependency_manifest_sha256'] = 'c' * 64
+            self.assertFalse(self.result()['qualified'])
 
     def test_correctness_outcome_is_independent_of_timing_evidence(self):
         self.campaign['runs'] = []

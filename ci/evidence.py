@@ -9,8 +9,8 @@ import statistics
 import subprocess
 import xml.etree.ElementTree as ET
 
-from bootstrap import ROOT, SIZE_PARTITIONS, VERSIONS
-from live_benchmark import campaign_scope, cases, check_original_inputs, PROFILES, ENGINES
+from bootstrap import ROOT, SIZE_PARTITIONS, VERSIONS, source_read_cache_bytes
+from live_benchmark import campaign_scope, cases, check_original_inputs, read_cache_admission, PROFILES, ENGINES
 from runner import validate_ci, actions_context, validate_same_run
 
 SUITES = ('size-scaling', 'sales-subset', 'sales-full')
@@ -143,9 +143,28 @@ def summarize(folder):
         check_original_inputs(campaign.get('original_input_sha256'))
     except ValueError as error:
         issues.append(str(error))
-    if campaign['ramsql']['source'] != VERSIONS['ramsql']:
+    source = VERSIONS['ramsql']
+    if campaign['ramsql']['source'] != source:
         issues.append('RAMSQL source differs from pinned candidate')
-    release = VERSIONS['ramsql'].get('release')
+    manifest = source.get('dependency_manifest_sha256')
+    if manifest and campaign['ramsql'].get('dependency_manifest_sha256') != manifest:
+        issues.append('RAMSQL dependency manifest differs from the source pin')
+    cache_request = source_read_cache_bytes(source)
+    if cache_request:
+        try:
+            startup = campaign['ramsql_server_arguments']
+            flag = '--read-cache-bytes'
+            if not isinstance(startup, list):
+                raise ValueError('RAMSQL startup cache arguments are missing')
+            offset = startup.index(flag)
+            if startup.count(flag) != 1 or startup[offset + 1] != str(cache_request):
+                raise ValueError('RAMSQL startup cache request differs from its pin')
+            admission = read_cache_admission(cache_request, campaign['ramsql_machine_capacity'])
+            if admission != campaign['ramsql_read_cache']:
+                raise ValueError('RAMSQL cache admission differs from the capacity probe')
+        except (KeyError, IndexError, TypeError, ValueError) as error:
+            issues.append('RAMSQL cache provenance: ' + str(error))
+    release = source.get('release')
     if release and campaign['ramsql']['binary_sha256'] != release['image_sha256']:
         issues.append('RAMSQL binary differs from pinned published release')
     correctness_issues = sorted(set(issues))
@@ -194,15 +213,21 @@ def summarize(folder):
     qualifies = campaign['profile'] == 'qualification' and not issues and all(row['advantage'] for row in rows)
     return dict(schema=1, suite=suite, profile=campaign['profile'], qualified=qualifies, size_partition=size_partition,
                 source_revision=campaign['ramsql']['source']['revision'], binary_sha256=campaign['ramsql']['binary_sha256'],
-                input_revision=campaign['input_revision'], ci=campaign.get('ci', {}),
+                input_revision=campaign['input_revision'], ci=campaign.get('ci', {}), read_cache_bytes_requested=cache_request,
                 correctness_evidence_passed=not correctness_issues, correctness_issues=correctness_issues,
                 issues=sorted(set(issues)), rows=rows)
 
 
 def markdown(summary):
     scope = campaign_scope(summary['suite'], summary.get('size_partition'))
+    cache_request = summary.get('read_cache_bytes_requested', 0)
+    status = ('**QUALIFIED significant advantage**' if summary['qualified']
+              else '**NOT QUALIFIED — keep the PR unmerged; no README performance claim.**')
+    if cache_request:
+        outcome = 'passed' if summary['qualified'] else 'failed'
+        status = f'Opt-in cache diagnostic ({cache_request:,} requested bytes). Formal advantage thresholds **{outcome}**.'
     lines = [f"## Live {scope} — {summary['profile']}", '',
-             '**QUALIFIED significant advantage**' if summary['qualified'] else '**NOT QUALIFIED — keep the PR unmerged; no README performance claim.**', '',
+             status, '',
              'All rates are queries/transactions per second at the original JDBC boundary. Bold ratios highlight at least 2× measured leads, including limited leads that do not pass the full gate.', '',
              '| Workload / clients | RAMSQL | PostgreSQL | IRDB | RAMSQL / fastest reference |',
              '| --- | ---: | ---: | ---: | ---: |']
@@ -310,12 +335,19 @@ def main():
             except ValueError as error:
                 errors.append(str(error))
         passed = not errors and all(s['qualified'] for s in summaries)
-        result = dict(schema=1, qualified=passed, merge_allowed=passed, minimum_ratio=MIN_RATIO, max_p99_ratio=MAX_P99_RATIO,
+        cache_request = source_read_cache_bytes(VERSIONS['ramsql'])
+        result = dict(schema=1, qualified=passed, merge_allowed=passed and not cache_request,
+                      diagnostic_only=bool(cache_request), read_cache_bytes_requested=cache_request,
+                      minimum_ratio=MIN_RATIO, max_p99_ratio=MAX_P99_RATIO,
                       workflow_run=f"https://github.com/{os.environ.get('GITHUB_REPOSITORY', '')}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}",
                       run_attempt=os.environ.get('GITHUB_RUN_ATTEMPT'), errors=errors, suites=summaries)
         (ROOT / 'reports').mkdir(exist_ok=True)
         (ROOT / 'reports/advantage.json').write_text(json.dumps(result, indent=2) + '\n')
-        text = ('# Proven significant RAMSQL advantage\n' if passed else '# Advantage gate failed — do not merge or claim a win\n')
+        if cache_request:
+            outcome = 'met' if passed else 'missed'
+            text = f'# Pinned cache diagnostic {outcome} the formal advantage thresholds\n'
+        else:
+            text = ('# Proven significant RAMSQL advantage\n' if passed else '# Advantage gate failed — do not merge or claim a win\n')
         text += '\n' + '\n'.join(markdown(s) for s in summaries)
         text += '\n'.join('- ' + error for error in errors) + '\n'
         (ROOT / 'reports/advantage.md').write_text(text)
