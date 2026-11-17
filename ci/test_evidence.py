@@ -62,7 +62,11 @@ class GateContracts(unittest.TestCase):
                 path.write_text(json.dumps(raw))
 
     def test_complete_qualification_fixture_passes(self):
-        self.assertTrue(self.result()['qualified'])
+        result = self.result()
+        self.assertTrue(result['qualified'])
+        scenario = result['rows'][0]['scenarios']['s1_region']
+        self.assertEqual(scenario['ramsql']['median_qps'], 1000 / 60)
+        self.assertEqual(scenario['irdb']['median_p99_us'], 24)
 
     def test_correctness_outcome_is_independent_of_timing_evidence(self):
         self.campaign['runs'] = []

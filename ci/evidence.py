@@ -95,7 +95,10 @@ def read_run(folder, campaign, run):
         if value['latencyMicros']['count'] != value['count']:
             raise ValueError('Inconsistent latency histogram in ' + name)
     return dict(qps=sum(value['count'] for value in values) / seconds,
-                p99_us=percentile([value['latencyMicros'] for value in values], 99))
+                p99_us=percentile([value['latencyMicros'] for value in values], 99),
+                scenarios={name: dict(qps=value['count'] / seconds,
+                                      p99_us=percentile([value['latencyMicros']], 99))
+                           for name, value in raw['scenarios'].items()})
 
 
 def summarize(folder):
@@ -169,6 +172,16 @@ def summarize(folder):
                                    min_qps=min(t['qps'] for t in trials), max_qps=max(t['qps'] for t in trials),
                                    median_p99_us=statistics.median(t['p99_us'] for t in trials))
         row = dict(case=case, engines=engines, advantage=False)
+        if case.startswith('mixed/'):
+            row['scenarios'] = {}
+            for scenario in sorted(MIXED[suite]):
+                row['scenarios'][scenario] = {}
+                for engine in engines:
+                    samples = [trial['scenarios'][scenario] for trial in grouped[(engine, case)]]
+                    row['scenarios'][scenario][engine] = dict(
+                        median_qps=statistics.median(sample['qps'] for sample in samples),
+                        median_p99_us=statistics.median(sample['p99_us'] for sample in samples),
+                    )
         if len(engines) == 3:
             ram = engines['ramsql']
             fastest = max(engines[e]['median_qps'] for e in ('postgres', 'irdb'))
@@ -205,6 +218,19 @@ def markdown(summary):
         cells.append(('**' if ratio >= MIN_RATIO else '') + f'{ratio:.2f}×' + ('**' if ratio >= MIN_RATIO else '') if ratio is not None else 'unqualified')
         lines.append('| ' + ' | '.join(cells) + ' |')
     lines += ['', 'Gate: all original checks, all declared cases, all three engines, three 60-second trials; at least 2× the faster reference in each case, separated trial ranges, and median p99 no more than 10% worse than either reference. Smoke results never qualify.', '']
+    for row in summary['rows']:
+        if not row.get('scenarios') or not row['engines']:
+            continue
+        lines += [f"### Query timings within {row['case']}", '',
+                  '| Original scenario | RAMSQL q/s · p99 ms | PostgreSQL q/s · p99 ms | IRDB q/s · p99 ms |',
+                  '| --- | ---: | ---: | ---: |']
+        for name, engines in row['scenarios'].items():
+            cells = [name]
+            for engine in ENGINES:
+                stats = engines.get(engine)
+                cells.append(f"{stats['median_qps']:.2f} · {stats['median_p99_us'] / 1000:.2f}" if stats else 'unscored')
+            lines.append('| ' + ' | '.join(cells) + ' |')
+        lines.append('')
     if summary['issues']:
         lines += ['Gaps and invalid/missing evidence:', ''] + ['- ' + issue for issue in summary['issues']]
     return '\n'.join(lines) + '\n'
