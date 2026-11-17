@@ -60,6 +60,20 @@ jobs:
         env:
           BUILD_VARIANT: ${{ matrix.variant }}
         run: python ci/bootstrap.py "$BUILD_VARIANT"
+      - uses: actions/setup-java@v4
+        if: matrix.variant == 'ramsql'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Verify exact prepared-PK wire and unchanged JDBC path
+        if: matrix.variant == 'ramsql'
+        run: python ci/prepared_pk_path_probe.py
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.variant == 'ramsql'
+        with:
+          name: prepared-pk-focused
+          path: reports/prepared-pk-focused/
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.variant }}-benchmark-binary
