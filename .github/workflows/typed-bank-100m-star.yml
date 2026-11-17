@@ -1,8 +1,8 @@
-name: Typed bank 100M synchronous WAL and recovery
+name: Compact MVCC headers on the durable 100M fixture
 
 on:
   push:
-    branches: [bench/ramsql-typed-bank-durable-cardinality-20261117]
+    branches: [bench/ramsql-compact-version-stamps-100m-20261118]
   workflow_dispatch:
 
 permissions:
@@ -10,11 +10,22 @@ permissions:
 
 jobs:
   typed-bank:
-    runs-on: ubuntu-latest
+    name: Durable star (${{ matrix.header }}-byte header)
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - header: 48
+            compact: "false"
+          - header: 32
+            compact: "true"
     env:
-      RAMSQL_SOURCE_REVISION: aebb257599da2325849c1975573b9d303b88ecc0
-      RAMSQL_SOURCE_SHA256: 2890faed20ed6ecc8e4b1a6f47f5abc5caad2b1b69383442dcaf03427849c719
+      COMPACT_VERSION_STAMPS: ${{ matrix.compact }}
+      EXPECTED_HEADER_BYTES: ${{ matrix.header }}
+      RAMSQL_SOURCE_REVISION: 6eba65f6ea9e99dd648a60a3fb4caa92b1fc9967
+      RAMSQL_SOURCE_SHA256: c030edeaca34fffd6b3cc612bbedae1d5970ac6bea6bf355cc970aeb1fe60536
       RAMSQL_FIXTURE_REVISION: bfdf49a4bf017f65d63590eb4aed0309d0874dce
       RAMSQL_FIXTURE_SHA256: 7112f0f063e02a5474f7e14aa4bb81ba354d60ef5ed5d27831c3def85b446c8b
     steps:
@@ -63,7 +74,7 @@ jobs:
         run: |
           set -euo pipefail
           "$SIG" version | tee evidence/sig-version.txt
-          (cd product; "$SIG" build -Doptimize=ReleaseSafe -Dintegral-version-banks=true) 2>&1 | tee evidence/build.txt
+          (cd product; "$SIG" build -Doptimize=ReleaseSafe -Dintegral-version-banks=true "-Dcompact-version-stamps=$COMPACT_VERSION_STAMPS") 2>&1 | tee evidence/build.txt
           install -m 755 product/sig-out/bin/ramsql evidence/ramsql
           sha256sum evidence/ramsql > evidence/SHA256SUMS
           cp "$SIG_RUNTIME_PREPARATION" evidence/runtime-preparation.json
@@ -86,7 +97,9 @@ jobs:
               "workflow_repository": os.environ["GITHUB_REPOSITORY"],
               "run_id": os.environ["GITHUB_RUN_ID"],
               "binary_sha256": hashlib.file_digest((path / "ramsql").open("rb"), "sha256").hexdigest(),
-              "build_options": ["-Doptimize=ReleaseSafe", "-Dintegral-version-banks=true"],
+              "build_options": ["-Doptimize=ReleaseSafe", "-Dintegral-version-banks=true",
+                                "-Dcompact-version-stamps=" + os.environ["COMPACT_VERSION_STAMPS"]],
+              "expected_version_header_bytes": int(os.environ["EXPECTED_HEADER_BYTES"]),
               "zpm": dependency_provenance(),
               "scope": "100M six-word facts, two dimensions, two workers, synchronous WAL and abrupt process recovery",
           }
@@ -106,11 +119,20 @@ jobs:
             "-Mroot=$zpm_root/tests/test_sql_change_log.sig" "-Msql=$zpm_root/src/core/sql.sig" \
             "-femit-bin=$RUNNER_TEMP/sql-change-log"
           "$RUNNER_TEMP/sql-change-log" | tee evidence/change-log-contract.txt
+          if [[ "$COMPACT_VERSION_STAMPS" == "true" ]]; then
+            "$SIG" build-exe --Sig-lib-dir "$SIG_LIB_DIR" -OReleaseSafe --dep sql \
+              "-Mroot=$zpm_root/tests/test_sql_compact_version_stamps.sig" "-Msql=$zpm_root/src/core/sql.sig" \
+              "-femit-bin=$RUNNER_TEMP/sql-compact-version-stamps"
+            "$RUNNER_TEMP/sql-compact-version-stamps" 2>&1 | tee evidence/compact-stamp-contract.txt
+            grep -F 'PASS SQL compact version stamps:' evidence/compact-stamp-contract.txt
+          fi
       - name: Check the WAL, restart and joined query contracts on 262144 facts
         run: |
           set -euo pipefail
           python -m pip install -r product/tools/requirements-test.txt
-          python product/tools/test_cli.py --binary evidence/ramsql --expect-integral-version-banks
+          cli=(--expect-integral-version-banks)
+          if [[ "$COMPACT_VERSION_STAMPS" == "true" ]]; then cli+=(--expect-compact-version-stamps); fi
+          python product/tools/test_cli.py --binary evidence/ramsql "${cli[@]}"
           df -B1 "$RUNNER_TEMP" | tee evidence/wal-disk.txt
           python fixture/tools/test_large_star_runtime.py --binary evidence/ramsql \
             --rows 262144 --memory-budget 14347884288 --require-ordered-range \
@@ -125,6 +147,87 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: typed-bank-durable-100m-evidence
+          name: compact-stamps-${{ matrix.header }}-evidence
           path: evidence/
           if-no-files-found: warn
+
+  compare:
+    name: Verify equivalent results and actual capacity savings
+    needs: typed-bank
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: compact-stamps-*-evidence
+          path: results
+      - name: Read both exact 100M reports
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          reports = {}
+          identities = {}
+          for header in (48, 32):
+              evidence = Path(f"results/compact-stamps-{header}-evidence")
+              probe = json.loads((evidence / "typed-bank-100m-star.json").read_text())
+              identity = json.loads((evidence / "provenance.json").read_text())
+              with (evidence / "ramsql").open("rb") as stream:
+                  binary_hash = hashlib.file_digest(stream, "sha256").hexdigest()
+              assert binary_hash == identity["binary_sha256"] == probe["binary_sha256"]
+              assert identity["expected_version_header_bytes"] == header
+              assert probe["passed"] and not probe["plan_only"] and probe["stage"] == "complete"
+              assert probe["fact_rows"] == probe["loaded_fact_rows"] == 100_000_000
+              assert probe["private_update_seen"] and probe["wal_bytes"] > 0
+              assert probe["durability"] == "synchronous_wal" and probe["ordered_range_required"]
+              assert probe["ordered_range"]["status"] == "passed"
+              assert probe["after_recovery"]["private_update_absent"]
+              assert probe["after_recovery"]["ordered_range"]["status"] == "passed"
+              assert probe["machine_capacity"]["storage_version_bytes"] == header
+              assert probe["machine_capacity"]["compact_version_stamps"] == (header == 32)
+              assert probe["machine_capacity"]["startup_fits"]
+              reports[header], identities[header] = probe, identity
+          regular, compact = reports[48], reports[32]
+          for name in ("product_revision", "product_archive_sha256", "fixture_revision", "fixture_archive_sha256",
+                       "fixture_sha256", "persistence_fixture_sha256", "zpm", "run_id"):
+              assert identities[48][name] == identities[32][name], name
+          assert identities[48]["binary_sha256"] != identities[32]["binary_sha256"]
+          assert regular["startup_options"] == compact["startup_options"]
+          for name in ("fact_bounds", "whole_star", "selective_star", "ordered_range", "concurrent_probes"):
+              assert regular[name] == compact[name], name
+              assert regular["after_recovery"][name] == compact["after_recovery"][name], name
+          assert regular["wal_bytes"] == compact["wal_bytes"]
+          prior, reduced = regular["machine_capacity"], compact["machine_capacity"]
+          assert prior["table_storage"] == reduced["table_storage"]
+          expected = 16 * sum(slot["versions"] for slot in prior["table_storage"])
+          actual = prior["backing_bytes"] - reduced["backing_bytes"]
+          assert actual == expected
+          summary = {
+              "version_headers": [48, 32],
+              "rows_per_fixture": regular["fact_rows"],
+              "backing_bytes_saved": actual,
+              "page_rounded_startup_bytes": [prior["startup_region_bytes"], reduced["startup_region_bytes"]],
+              "peak_rss_after_recovery_bytes": [probe["after_recovery"]["memory_after_checks"]["peak_rss_bytes"]
+                                                for probe in (regular, compact)],
+              "recovery_seconds": [probe["recovery_seconds"] for probe in (regular, compact)],
+              "wal_bytes": regular["wal_bytes"],
+          }
+          Path("comparison.json").write_text(json.dumps(summary, indent=2) + "\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as log:
+              log.write("## One 100M-row fact table, two dimensions, synchronous WAL\n\n")
+              log.write(f"Both fixtures passed before and after abrupt restart. Backing saved {actual:,} bytes.\n\n")
+              log.write("| Version header | Page-rounded startup bytes | Recovery peak RSS bytes | Recovery seconds |\n")
+              log.write("| --- | ---: | ---: | ---: |\n")
+              for i, header in enumerate((48, 32)):
+                  log.write(f"| {header} B | {summary['page_rounded_startup_bytes'][i]:,} | "
+                            f"{summary['peak_rss_after_recovery_bytes'][i]:,} | {summary['recovery_seconds'][i]:.3f} |\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compact-stamps-comparison
+          path: comparison.json
+          if-no-files-found: error
