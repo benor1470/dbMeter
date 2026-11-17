@@ -193,7 +193,7 @@ class Campaign:
 
     def java(self, verb, engine, tail=()):
         selected = []
-        if verb == 'check' and self.suite == 'size-scaling' and engine != 'postgres':
+        if verb == 'check' and self.suite == 'size-scaling' and engine != 'postgres' and '--only' not in tail:
             selected = ['--only', ','.join(f's{n}_{kind}' for n in SIZES for kind in ('a_pk', 'b_filter', 'c_topn', 'd_last'))]
         return ['java', '-Xms32m', '-Xmx256m', '-jar', str(ROOT / 'build/dbmeter.jar'), verb,
                 '--skip-setup', '-c', str(self.configs[engine]), '--set', 'run.databaseLabel=' + engine,
@@ -418,13 +418,15 @@ class Campaign:
             if not passed:
                 self.report['gaps'].append(engine + ' failed original full-suite correctness; no throughput scored for this suite')
             if engine == 'ramsql' and self.suite == 'size-scaling':
-                probes = [line.split('.', 2)[1] for line in (self.folder / 'ramsql.properties').read_text().splitlines() if line.startswith('check.cap_') and '.sql=' in line]
-                # The original capability probes remain explicit merge
-                # blockers. Only the unscored setup instance runs them.
-                argv = ['java', '-Xms32m', '-Xmx256m', '-jar', str(ROOT / 'build/dbmeter.jar'), 'check', '--skip-setup', '-c', str(self.configs[engine]), '--only', ','.join(probes), '--junit', str(self.out / 'ramsql-capabilities.xml')]
-                self.report['ramsql_capability_probes_passed'] = self.command('ramsql-capabilities', argv) == 0
+                self.report['ramsql_capability_probes_passed'] = self.check_size_capabilities('ramsql-capabilities')
                 if not self.report['ramsql_capability_probes_passed']:
                     self.report['gaps'].append('Original RAMSQL text/column/table capability probes failed; valid read timings do not close those gaps')
+
+    def check_size_capabilities(self, name):
+        probes = [line.split('.', 2)[1] for line in (self.folder / 'ramsql.properties').read_text().splitlines()
+                  if line.startswith('check.cap_') and '.sql=' in line]
+        return self.command(name, self.java('check', 'ramsql',
+            ['--only', ','.join(probes), '--junit', str(self.out / (name + '.xml'))])) == 0
 
     def run(self):
         generator = self.folder / ('gen_expected.py' if self.suite == 'sales-full' else 'gen.py')

@@ -8,12 +8,18 @@ from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
 from bootstrap import VERSIONS
-from evidence import MIXED
-from live_benchmark import PROFILES
-from paired_benchmark import CASES, ORDER, SUITE, summarize_pairs, paired_cases
+from evidence import CAPABILITY_CHECKS, MIXED
+from live_benchmark import ENGINES, PROFILES
+from paired_benchmark import CASES, ORDER, REQUIRED_CHECKS, SUITE, summarize_pairs, paired_cases
 
 
 class PairedContracts(unittest.TestCase):
+    def xml(self, name, checks):
+        node = ET.Element('testsuite')
+        for check in sorted(checks):
+            ET.SubElement(node, 'testcase', name=check)
+        ET.ElementTree(node).write(self.folder / (name + '.xml'))
+
     def setUp(self):
         self.enterContext(patch.dict(VERSIONS))
         VERSIONS.pop('paired_dependency_manifests', None)
@@ -26,12 +32,20 @@ class PairedContracts(unittest.TestCase):
             for mode, key, char in (('baseline', 'ramsql_baseline', 'a'), ('candidate', 'ramsql', 'b'))}
         self.campaign = dict(suite=SUITE, profile='qualification', policy=PROFILES['qualification'],
             diagnostic_only=True, merge_allowed=False, expected_cases=list(CASES), paired_order=ORDER, paired_sources=proofs, runs=[])
+        if SUITE == 'size-scaling':
+            self.enterContext(patch('paired_benchmark.check_original_inputs'))
+            self.campaign.update(checks=dict.fromkeys(ENGINES, True), ramsql_capability_probes_passed=True,
+                paired_server_arguments={f'{mode}/{pair}': ['--workers', '8', '--work-rows', '4096']
+                                         for pair in (1, 2, 3) for mode in ('baseline', 'candidate')})
+            for engine in ENGINES:
+                extra = CAPABILITY_CHECKS if engine == 'postgres' else set()
+                self.xml(f'{engine}-checks', REQUIRED_CHECKS | extra)
+            self.xml('ramsql-capabilities', CAPABILITY_CHECKS)
         for pair, order in enumerate(ORDER, 1):
             for mode in order:
-                xml = ET.Element('testsuite')
-                for name in {'a_totals'} | MIXED[SUITE]:
-                    ET.SubElement(xml, 'testcase', name=name)
-                ET.ElementTree(xml).write(self.folder / f'{mode}-pair{pair}-checks.xml')
+                self.xml(f'{mode}-pair{pair}-checks', REQUIRED_CHECKS)
+                if SUITE == 'size-scaling':
+                    self.xml(f'{mode}-pair{pair}-capabilities', CAPABILITY_CHECKS)
                 for case in CASES:
                     scenario, clients = case.split('/')
                     count = 200 if mode == 'candidate' else 100
@@ -62,6 +76,32 @@ class PairedContracts(unittest.TestCase):
         self.assertEqual(paired_cases(case, 'sales-full'), ('mixed/1', 'mixed/8', case + '/1', case + '/8'))
         with self.assertRaises(ValueError):
             paired_cases(case, 'sales-subset')
+
+    def test_prepared_pk_selects_only_four_original_size_cases(self):
+        self.assertEqual(paired_cases('prepared-pk', 'size-scaling'),
+                         ('s100000_pk/1', 's100000_pk/8', 's1000000_pk/1', 's1000000_pk/8'))
+        with self.assertRaisesRegex(ValueError, 'prepared-PK focus'):
+            paired_cases('s100000_topn', 'size-scaling')
+
+    @unittest.skipUnless(SUITE == 'size-scaling', 'prepared PK evidence')
+    def test_size_setup_and_pair_capabilities_are_required(self):
+        self.xml('postgres-checks', REQUIRED_CHECKS)
+        with self.assertRaisesRegex(ValueError, 'dropped or duplicated'):
+            summarize_pairs(self.folder, self.campaign)
+        self.xml('postgres-checks', REQUIRED_CHECKS | CAPABILITY_CHECKS)
+        self.xml('candidate-pair3-capabilities', set())
+        with self.assertRaisesRegex(ValueError, 'dropped or duplicated'):
+            summarize_pairs(self.folder, self.campaign)
+
+    @unittest.skipUnless(SUITE == 'size-scaling', 'prepared PK evidence')
+    def test_size_pair_requires_identical_multi_worker_arguments(self):
+        self.campaign['paired_server_arguments']['candidate/2'] = ['--workers', '3', '--work-rows', '4096']
+        with self.assertRaisesRegex(ValueError, 'arguments differ'):
+            summarize_pairs(self.folder, self.campaign)
+        for case in self.campaign['paired_server_arguments']:
+            self.campaign['paired_server_arguments'][case] = ['--workers', '1']
+        with self.assertRaisesRegex(ValueError, 'multi-reactor'):
+            summarize_pairs(self.folder, self.campaign)
 
     def test_missing_trial_rejected(self):
         self.campaign['runs'].pop()

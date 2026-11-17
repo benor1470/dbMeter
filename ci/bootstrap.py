@@ -69,8 +69,10 @@ def workflow_matrices(versions, paired_only=False):
         jobs.extend(dict(suite=suite, kind='diagnostic') for suite in ('sales-subset', 'sales-full'))
     if paired:
         suite = versions.get('paired_suite', 'sales-subset')
-        if suite not in ('sales-subset', 'sales-full'):
-            raise ValueError('Paired suite must be an original sales suite')
+        if suite not in ('size-scaling', 'sales-subset', 'sales-full'):
+            raise ValueError('Paired suite must be an original benchmark suite')
+        if suite == 'size-scaling' and not paired_only:
+            raise ValueError('Size-scaling pairs require a paired-only dispatch')
         jobs.append(dict(suite=suite, kind='paired'))
         if cache is not None:
             jobs[-1]['single_binary'] = True

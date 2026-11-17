@@ -3,10 +3,11 @@ import json
 import re
 import statistics
 import sys
+from xml.etree.ElementTree import ParseError
 
 from bootstrap import ROOT, RUNTIME, VERSIONS, digest, paired_cache_budgets
-from evidence import MIXED, check_xml, publish, read_run
-from live_benchmark import Campaign
+from evidence import CAPABILITY_CHECKS, MIXED, check_xml, publish, read_run
+from live_benchmark import Campaign, ENGINES, SIZES, check_original_inputs
 from runner import host_snapshot
 
 ORDER = (('baseline', 'candidate'), ('candidate', 'baseline'), ('baseline', 'candidate'))
@@ -15,13 +16,35 @@ FOCUS = VERSIONS.get('paired_focus', 's3_top_products')
 
 
 def paired_cases(focus, suite='sales-subset'):
+    if suite == 'size-scaling':
+        if focus != 'prepared-pk':
+            raise ValueError('Size-scaling pairing requires the original prepared-PK focus')
+        return tuple(f's{size}_pk/{clients}' for size in (100000, 1000000) for clients in (1, 8))
     if suite not in MIXED or focus not in MIXED[suite]:
         raise ValueError('Paired focus must name an existing scenario in its original sales suite')
     return ('mixed/1', 'mixed/8', focus + '/1', focus + '/8')
 
 
 CASES = paired_cases(FOCUS, SUITE)
-REQUIRED_CHECKS = {'a_totals'} | MIXED[SUITE]
+REQUIRED_CHECKS = ({f's{size}_{kind}' for size in SIZES for kind in ('a_pk', 'b_filter', 'c_topn', 'd_last')}
+                   if SUITE == 'size-scaling' else {'a_totals'} | MIXED[SUITE])
+
+
+def validate_size_setup(folder, campaign):
+    check_original_inputs(campaign.get('original_input_sha256'))
+    if campaign.get('checks') != dict.fromkeys(ENGINES, True) or campaign.get('ramsql_capability_probes_passed') is not True:
+        raise ValueError('Original size-scaling setup checks did not pass')
+    for engine in ENGINES:
+        extra = CAPABILITY_CHECKS if engine == 'postgres' else set()
+        check_xml(folder / f'{engine}-checks.xml', REQUIRED_CHECKS | extra)
+    check_xml(folder / 'ramsql-capabilities.xml', CAPABILITY_CHECKS)
+
+
+def validate_size_pair_arguments(arguments):
+    if '--workers' not in arguments or arguments.index('--workers') == len(arguments) - 1:
+        raise ValueError('Missing prepared PK worker capacity argument')
+    if int(arguments[arguments.index('--workers') + 1]) < 2:
+        raise ValueError('Prepared PK comparison requires the original multi-reactor capacity profile')
 
 
 def validate_sources(proofs):
@@ -54,6 +77,15 @@ def summarize_pairs(folder, campaign):
         raise ValueError('Paired matrix changed')
     if tuple(tuple(order) for order in campaign.get('paired_order', [])) != ORDER:
         raise ValueError('Paired order changed')
+    if SUITE == 'size-scaling':
+        validate_size_setup(folder, campaign)
+        arguments = campaign['paired_server_arguments']
+        if set(arguments) != {f'{mode}/{pair}' for pair in (1, 2, 3) for mode in ('baseline', 'candidate')}:
+            raise ValueError('Missing paired server capacity arguments')
+        control = arguments['baseline/1']
+        validate_size_pair_arguments(control)
+        if any(actual != control for actual in arguments.values()):
+            raise ValueError('Paired server capacity arguments differ')
     scheduled = [(pair, mode, case) for pair, order in enumerate(ORDER, 1) for mode in order for case in CASES]
     if [(run['trial'], run['variant'], run['case']) for run in campaign['runs']] != scheduled:
         raise ValueError('Paired trial schedule is incomplete or reordered')
@@ -73,6 +105,8 @@ def summarize_pairs(folder, campaign):
     for pair in (1, 2, 3):
         for mode in ('baseline', 'candidate'):
             check_xml(folder / f'{mode}-pair{pair}-checks.xml', REQUIRED_CHECKS)
+            if SUITE == 'size-scaling':
+                check_xml(folder / f'{mode}-pair{pair}-capabilities.xml', CAPABILITY_CHECKS)
     rows = []
     for case in CASES:
         row = dict(case=case, engines={}, paired_qps_ratios=[])
@@ -104,6 +138,7 @@ class PairedCampaign(Campaign):
             scope='Paired RAMSQL control/candidate; not reference-engine or full-suite qualification',
             expected_cases=list(CASES), paired_order=ORDER, paired_focus=FOCUS,
             paired_sources=dict(baseline=baseline, candidate=self.ram_provenance), paired_admission={},
+            paired_server_arguments={},
             paired_read_cache_bytes=self.cache_budgets, paired_read_cache={})
         validate_sources(self.report['paired_sources'])
         self.save()
@@ -114,9 +149,11 @@ class PairedCampaign(Campaign):
             raise RuntimeError('Original generator failed')
         self.setup()
         if not all(self.report['checks'].get(engine) for engine in ('ramsql', 'postgres', 'irdb')):
-            self.report['gaps'].append('Paired mixed timing requires all original checks to pass first')
+            self.report['gaps'].append('Paired timing requires all original checks to pass first')
             self.save()
             return
+        if SUITE == 'size-scaling':
+            validate_size_setup(self.out, self.report)
         for pair, order in enumerate(ORDER, 1):
             for mode in order:
                 self.binary = self.candidate_binary if mode == 'candidate' else self.baseline_binary
@@ -124,6 +161,11 @@ class PairedCampaign(Campaign):
                 self.ramsql_read_cache_bytes = self.cache_budgets[mode] if self.cache_budgets else 0
                 with self.running('ramsql'):
                     self.report['paired_admission'][f'{mode}/{pair}'] = self.report['ramsql_machine_capacity']
+                    self.report['paired_server_arguments'][f'{mode}/{pair}'] = arguments = self.report['ramsql_server_arguments']
+                    if SUITE == 'size-scaling':
+                        validate_size_pair_arguments(arguments)
+                        if arguments != next(iter(self.report['paired_server_arguments'].values())):
+                            raise RuntimeError('Paired server capacity arguments differ')
                     self.report['paired_read_cache'][f'{mode}/{pair}'] = self.report['ramsql_read_cache']
                     for source in self.data_files:
                         self.psql(source)
@@ -151,13 +193,20 @@ class PairedCampaign(Campaign):
                             host_before=before, host_after=host_snapshot()))
                         self.save()
                         read_run(self.out, self.report, self.report['runs'][-1])
+                    # Capability probes create extra tables, so keep them off
+                    # the timed schema and check them after the timed reads.
+                    if SUITE == 'size-scaling':
+                        capability_name = f'{mode}-pair{pair}-capabilities'
+                        if not self.check_size_capabilities(capability_name):
+                            raise RuntimeError('Original capacity checks failed: ' + mode)
+                        check_xml(self.out / (capability_name + '.xml'), CAPABILITY_CHECKS)
         self.report['completed'] = True
         self.save()
 
     def publish(self):
         try:
             result = summarize_pairs(self.out, self.report)
-        except (ValueError, KeyError, OSError, TypeError) as error:
+        except (ValueError, KeyError, OSError, TypeError, ParseError) as error:
             result = dict(diagnostic_only=True, merge_allowed=False, rows=[], error=str(error))
         (self.out / 'paired-summary.json').write_text(json.dumps(result, indent=2) + '\n')
         lines = ['# Same-runner RAMSQL A/B diagnostic', '',

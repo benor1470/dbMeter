@@ -121,6 +121,13 @@ class MatrixAndBankTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             workflow_matrices({'ramsql': {}}, paired_only=True)
 
+    def test_size_pairs_are_an_explicit_two_binary_diagnostic(self):
+        pins = {'ramsql': {'revision': 'candidate'}, 'ramsql_baseline': {'revision': 'baseline'}, 'paired_suite': 'size-scaling'}
+        with self.assertRaisesRegex(ValueError, 'paired-only'):
+            workflow_matrices(pins)
+        self.assertEqual(workflow_matrices(pins, paired_only=True),
+                         ({'variant': ['ramsql', 'ramsql-baseline']}, {'include': [{'suite': 'size-scaling', 'kind': 'paired'}]}))
+
     def test_cache_experiment_uses_one_image_and_cannot_enter_live_gate(self):
         source = {'revision': 'same'}
         versions = {'ramsql': source, 'ramsql_baseline': dict(source), 'paired_suite': 'sales-full',
