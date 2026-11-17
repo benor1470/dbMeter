@@ -40,6 +40,23 @@ def workflow_matrices(versions):
     return builds, {'include': jobs}
 
 
+def source_capacity_flags(spec):
+    """Translate a pinned build profile to RAMSQL options."""
+    profile = spec.get('capacity_profile')
+    if profile is None:
+        return []
+    bounds = {'tables': (1, 65535), 'columns': (1, 255), 'text-bytes': (1, 65535)}
+    if not isinstance(profile, dict) or not profile or not profile.keys() <= bounds.keys():
+        raise ValueError('Invalid RAMSQL source capacity profile')
+    flags = []
+    for name, value in sorted(profile.items()):
+        low, high = bounds[name]
+        if type(value) is not int or not low <= value <= high:
+            raise ValueError(f'Invalid RAMSQL source capacity: {name}')
+        flags.append(f'-D{name}={value}')
+    return flags
+
+
 def install_release(spec, runtime):
     """Install only the qualified Linux binary from the pinned release archive."""
     release = spec['release']
@@ -126,14 +143,18 @@ def main():
                         '--installed-lib', str(library), '--output', str(prepared)], cwd=checkout, check=True)
         library = prepared / 'lib'
         env = dict(os.environ, SIG_LIB_DIR=str(library))
-        build_arguments = ['build', '-Doptimize=ReleaseFast', '-Dtarget=x86_64-linux-musl', '-Dlink-libc=false']
+        build_arguments = ['build', '-Doptimize=ReleaseFast', '-Dtarget=x86_64-linux-musl', '-Dlink-libc=false'] + source_capacity_flags(spec)
         subprocess.run([str(compiler), *build_arguments, '--prefix', str(runtime / 'ramsql')], cwd=checkout, env=env, check=True)
         binary = runtime / 'ramsql/bin/ramsql'
+        capabilities = json.loads(subprocess.check_output([str(binary), '--capabilities']))
+        for name, expected in spec.get('capacity_profile', {}).items():
+            if capabilities[name.replace('-', '_')] != expected:
+                raise ValueError(f'RAMSQL executable capacity differs from its pin: {name}')
         (runtime / 'ramsql-provenance.json').write_text(json.dumps(dict(
             source=spec, toolchain=VERSIONS['sig'], binary_sha256=digest(binary),
             dependency_manifest_sha256=digest(checkout / 'build.sig.zon'),
             runtime_preparation=json.loads((prepared / 'runtime-preparation.json').read_text()),
-            capabilities=json.loads(subprocess.check_output([str(binary), '--capabilities'])),
+            capabilities=capabilities,
             build_arguments=build_arguments), indent=2) + '\n')
     elif sys.argv[1] == 'dependencies':
         drivers = ROOT / 'drivers'

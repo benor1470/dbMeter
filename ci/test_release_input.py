@@ -7,6 +7,8 @@ import tarfile
 import tempfile
 import unittest
 
+from bootstrap import source_capacity_flags
+
 from bootstrap import digest, install_release, workflow_matrices
 from live_benchmark import SIZES, ramsql_banks
 
@@ -88,6 +90,16 @@ class MatrixAndBankTests(unittest.TestCase):
                          [job for job in source_jobs['include'] if job['kind'] != 'paired'])
         self.assertEqual({job['suite'] for job in release_jobs['include'] if job['kind'] == 'live'},
                          {'size-scaling', 'sales-subset', 'sales-full'})
+
+    def test_capacity_profile_has_only_typed_build_options(self):
+        self.assertEqual(source_capacity_flags({}), [])
+        self.assertEqual(
+            source_capacity_flags({'capacity_profile': {'tables': 32, 'columns': 9, 'text-bytes': 200}}),
+            ['-Dcolumns=9', '-Dtables=32', '-Dtext-bytes=200'],
+        )
+        for profile in ({'columns': 256}, {'tables': True}, {'text-bytes': '200'}, {'target': 'host'}):
+            with self.subTest(profile=profile), self.assertRaises(ValueError):
+                source_capacity_flags({'capacity_profile': profile})
 
     def test_larger_catalog_keeps_original_data_banks(self):
         rows, versions = ramsql_banks('size-scaling', 32)
