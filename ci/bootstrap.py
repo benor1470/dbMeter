@@ -31,11 +31,13 @@ def download(spec, target):
 
 
 def workflow_matrices(versions):
-    release = 'release' in versions['ramsql']
-    builds = {'variant': ['ramsql'] if release else ['ramsql', 'ramsql-baseline']}
+    candidate = versions['ramsql']
+    baseline = versions.get('ramsql_baseline')
+    paired = 'release' not in candidate and baseline is not None and baseline != candidate
+    builds = {'variant': ['ramsql', 'ramsql-baseline'] if paired else ['ramsql']}
     jobs = [dict(suite=suite, kind='live') for suite in ('size-scaling', 'sales-subset', 'sales-full')]
     jobs.extend(dict(suite=suite, kind='diagnostic') for suite in ('sales-subset', 'sales-full'))
-    if not release:
+    if paired:
         jobs.append(dict(suite='sales-subset', kind='paired'))
     return builds, {'include': jobs}
 

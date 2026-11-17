@@ -18,8 +18,8 @@ from runner import host_snapshot
 class SupportedCampaign(Campaign):
     def __init__(self, suite):
         super().__init__(suite, 'qualification')
-        prefix = 'q' if suite == 'sales-full' else 's'
-        self.selected = (prefix + '5_high_value_customers', prefix + '6_store_category_mix')
+        self.selected = (('q1_region_month', 'q4_segment_discount_rollup') if suite == 'sales-full'
+                         else ('s1_region', 's4_segment_discount'))
         self.report.update(diagnostic_only=True, merge_allowed=False,
                            scope='Selected original read cases only; never all-case qualification',
                            expected_cases=[f'{case}/{clients}' for case in self.selected for clients in (1, 8)],

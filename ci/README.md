@@ -115,8 +115,8 @@ production qualification. See [GitHub runner specifications](https://docs.github
 ## Optimization diagnostics while SQL gaps remain
 
 Separate `diagnostic-sales-subset` and `diagnostic-sales-full` jobs retain all
-original full-suite checks, then independently check the existing customer-total
-and store/category cases plus their original totals check on every engine.
+original full-suite checks, then independently check the existing region and
+segment/discount cases plus their original totals check on every engine.
 Only when those checks pass do they time those two unchanged query files with
 1/8 clients, three original-duration trials and rotating engine order. They use
 the original 1M/5M datasets respectively; a full-data capacity rejection remains
@@ -131,7 +131,8 @@ SQL/data/expected CSV files are changed.
 ## Same-runner candidate/control experiments
 
 The `paired-sales-subset` job runs a separately pinned RAMSQL baseline and
-candidate on one VM in AB / BA / AB order. Both artifacts must have identical
+candidate on one VM in AB / BA / AB order. The matrix omits this job when the
+two source specifications are identical. Both artifacts must have identical
 dependency-manifest hashes, toolchain pins and build arguments. For the typed
 group experiment the two server commits differ only by the opt-in and changelog;
 the dependency includes the same sparse-predicate path in both variants.

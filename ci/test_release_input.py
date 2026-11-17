@@ -82,13 +82,22 @@ class ReleaseInputTests(unittest.TestCase):
 
 class MatrixAndBankTests(unittest.TestCase):
     def test_release_mode_keeps_every_reference_engine_campaign(self):
-        source_build, source_jobs = workflow_matrices({'ramsql': {}})
+        source_build, source_jobs = workflow_matrices({'ramsql': {'revision': 'candidate'},
+                                                       'ramsql_baseline': {'revision': 'baseline'}})
         release_build, release_jobs = workflow_matrices({'ramsql': {'release': {}}})
         self.assertEqual(source_build['variant'], ['ramsql', 'ramsql-baseline'])
         self.assertEqual(release_build['variant'], ['ramsql'])
         self.assertEqual(release_jobs['include'],
                          [job for job in source_jobs['include'] if job['kind'] != 'paired'])
         self.assertEqual({job['suite'] for job in release_jobs['include'] if job['kind'] == 'live'},
+                         {'size-scaling', 'sales-subset', 'sales-full'})
+
+    def test_identical_source_profile_does_not_repeat_paired_campaign(self):
+        source = {'revision': 'same', 'capacity_profile': {'tables': 32}}
+        builds, jobs = workflow_matrices({'ramsql': source, 'ramsql_baseline': dict(source)})
+        self.assertEqual(builds['variant'], ['ramsql'])
+        self.assertNotIn('paired', {job['kind'] for job in jobs['include']})
+        self.assertEqual({job['suite'] for job in jobs['include'] if job['kind'] == 'live'},
                          {'size-scaling', 'sales-subset', 'sales-full'})
 
     def test_capacity_profile_has_only_typed_build_options(self):
