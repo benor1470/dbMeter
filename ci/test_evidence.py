@@ -18,6 +18,8 @@ class GateContracts(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.folder = Path(self.directory.name)
+        source = VERSIONS['ramsql']
+        image_sha = source.get('release', {}).get('image_sha256', 'c' * 64)
         self.campaign = dict(schema=1, suite='sales-subset', profile='qualification', policy=PROFILES['qualification'],
                              expected_cases=[f'{name}/{clients}' for name, clients in cases('sales-subset')],
                              checks=dict.fromkeys(ENGINES, True), completed=True, gaps=[], runs=[],
@@ -25,7 +27,7 @@ class GateContracts(unittest.TestCase):
                              input_revision='b' * 40,
                              ci=dict(provider='github-actions', repository='benor1470/dbMeter', run_id='123',
                                      run_attempt='1', runner_name='synthetic-unit-fixture', runner_os='Linux', checkout_revision='b' * 40),
-                             ramsql=dict(source=copy.deepcopy(VERSIONS['ramsql']), binary_sha256='c' * 64))
+                             ramsql=dict(source=copy.deepcopy(source), binary_sha256=image_sha))
         for engine in ENGINES:
             xml = ET.Element('testsuite')
             for name in {'a_totals'} | evidence.MIXED['sales-subset']:
@@ -61,6 +63,7 @@ class GateContracts(unittest.TestCase):
     def test_release_campaign_requires_pinned_binary(self):
         release_source = dict(VERSIONS['ramsql'], release={'image_sha256': 'c' * 64})
         self.campaign['ramsql']['source'] = release_source
+        self.campaign['ramsql']['binary_sha256'] = 'c' * 64
         with patch.dict(VERSIONS, ramsql=release_source):
             self.assertTrue(self.result()['qualified'])
             self.campaign['ramsql']['binary_sha256'] = 'd' * 64

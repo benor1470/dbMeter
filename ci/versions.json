@@ -1,8 +1,13 @@
 {
   "ramsql": {
-    "revision": "ec93758a931e5fb0a6261388e255ff9307a362c6",
-    "url": "https://github.com/SB0LTD/ramsql/archive/ec93758a931e5fb0a6261388e255ff9307a362c6.tar.gz",
-    "sha256": "496b075ecd81579e1f9e52355f9dea81230cf23b7c49578b635d4c9192d311b4"
+    "revision": "7c0471e828cf8eab8266a04f4dbc309fdd1e9182",
+    "release": {
+      "tag": "ci-v0.3.0-beta.2-run.42408071656.1",
+      "version": "0.3.0-beta.2",
+      "manifest_sha256": "d73e2095ba5ac8092f4df42532c4266a68a844617f43c329a5c3d5cd3edfb4e9",
+      "archive_sha256": "2e77ec93d91aebc878b87cb44180c50438b427309dcda16e04d4e8fdb51a4b2e",
+      "image_sha256": "fa513185c99963a060beaf11417ff9f470d49bad1635d199db738d60fc2c632d"
+    }
   },
   "ramsql_baseline": {
     "revision": "ec93758a931e5fb0a6261388e255ff9307a362c6",
