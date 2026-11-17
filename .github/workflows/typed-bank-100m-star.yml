@@ -2,7 +2,7 @@ name: Typed bank 100M star correctness
 
 on:
   push:
-    branches: [bench/ramsql-typed-bank-100m-star-20261117]
+    branches: [bench/ramsql-typed-bank-100m-joined-topn-20261117]
   workflow_dispatch:
 
 permissions:
@@ -13,8 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      RAMSQL_SOURCE_REVISION: 668e855bb53b9ee1097659ca741970444a3acda7
-      RAMSQL_SOURCE_SHA256: a7eb185f2c94c66a0c268c95deb5af99af90050cb20c6a971d6ca09fccce1ea0
+      RAMSQL_SOURCE_REVISION: efecbcd683528ffeb4793baafa7ed0c79081f324
+      RAMSQL_SOURCE_SHA256: 809a93153714e64b5d05dc717d7e417c864f4fb42b86a0affe1b50a6d95b2908
       RAMSQL_FIXTURE_REVISION: 30830d2198687b74e7203bd7fff7a5c7e1770edc
       RAMSQL_FIXTURE_SHA256: 458c00b62ff8b84919ffc7b1933d511429aac67f33d09a44f3e5fe16a990a765
     steps:
@@ -91,13 +91,23 @@ jobs:
           }
           (path / "provenance.json").write_text(json.dumps(identity, indent=2) + "\n", encoding="utf-8")
           PY
-      - name: Qualify 100M facts and three-table grouped joins over PostgreSQL
+      - name: Qualify 100M facts and three-table joins over PostgreSQL
         run: |
           set -euo pipefail
           python -m pip install -r product/tools/requirements-test.txt
           python product/tools/test_cli.py --binary evidence/ramsql --expect-integral-version-banks
           python fixture/tools/test_large_star_runtime.py --binary evidence/ramsql \
             --rows 100000000 --memory-budget 14347884288 --report evidence/typed-bank-100m-star.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("evidence/typed-bank-100m-star.json").read_text(encoding="utf-8"))
+          ordered_range = report["ordered_range"]
+          if ordered_range["status"] != "passed":
+              raise SystemExit(f"Ordered range correctness failed: {ordered_range}")
+          print(f"Ordered range correctness passed with {len(ordered_range['rows'])} exact rows")
+          PY
           sha256sum --check --strict evidence/SHA256SUMS
       - uses: actions/upload-artifact@v4
         if: always()
