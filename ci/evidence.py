@@ -139,6 +139,9 @@ def summarize(folder):
         issues.append('Original input integrity manifest missing')
     if campaign['ramsql']['source'] != VERSIONS['ramsql']:
         issues.append('RAMSQL source differs from pinned candidate')
+    release = VERSIONS['ramsql'].get('release')
+    if release and campaign['ramsql']['binary_sha256'] != release['image_sha256']:
+        issues.append('RAMSQL binary differs from pinned published release')
     grouped = defaultdict(list)
     seen = set()
     for run in campaign['runs']:

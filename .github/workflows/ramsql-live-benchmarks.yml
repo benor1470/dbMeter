@@ -19,14 +19,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  plan:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.matrices.outputs.build }}
+      benchmark: ${{ steps.matrices.outputs.benchmark }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Select the build and benchmark matrices
+        id: matrices
+        run: python3 ci/bootstrap.py workflow-matrices >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      matrix:
-        variant: [ramsql, ramsql-baseline]
+      matrix: ${{ fromJSON(needs.plan.outputs.build) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,7 +50,7 @@ jobs:
           python-version: '3.12'
       - name: Test the evidence gate, including false-green cases
         run: python -m unittest discover -s ci -p 'test_*.py' -v
-      - name: Build pinned allocator-free RAMSQL
+      - name: Install pinned RAMSQL benchmark binary
         env:
           BUILD_VARIANT: ${{ matrix.variant }}
         run: python ci/bootstrap.py "$BUILD_VARIANT"
@@ -49,21 +63,14 @@ jobs:
           retention-days: 14
 
   benchmark:
-    needs: build
+    needs: [plan, build]
     # Set this variable to an existing larger Linux runner label for full-data
     # qualification. Never silently downsize the reviewer's dataset to fit CI.
     runs-on: ${{ vars.RAMSQL_BENCHMARK_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 240
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - {suite: size-scaling, kind: live}
-          - {suite: sales-subset, kind: live}
-          - {suite: sales-full, kind: live}
-          - {suite: sales-subset, kind: diagnostic}
-          - {suite: sales-full, kind: diagnostic}
-          - {suite: sales-subset, kind: paired}
+      matrix: ${{ fromJSON(needs.plan.outputs.benchmark) }}
     env:
       BENCHMARK_PROFILE: ${{ (github.event_name == 'pull_request' || inputs.qualification) && 'qualification' || 'smoke' }}
     steps:

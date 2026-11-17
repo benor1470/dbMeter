@@ -58,6 +58,14 @@ class GateContracts(unittest.TestCase):
     def test_complete_qualification_fixture_passes(self):
         self.assertTrue(self.result()['qualified'])
 
+    def test_release_campaign_requires_pinned_binary(self):
+        release_source = dict(VERSIONS['ramsql'], release={'image_sha256': 'c' * 64})
+        self.campaign['ramsql']['source'] = release_source
+        with patch.dict(VERSIONS, ramsql=release_source):
+            self.assertTrue(self.result()['qualified'])
+            self.campaign['ramsql']['binary_sha256'] = 'd' * 64
+            self.assertIn('RAMSQL binary differs from pinned published release', self.result()['issues'])
+
     def test_smoke_can_never_qualify(self):
         self.campaign.update(profile='smoke', policy=PROFILES['smoke'])
         self.assertFalse(self.result()['qualified'])

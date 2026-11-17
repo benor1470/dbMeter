@@ -24,6 +24,20 @@ PROFILES = {'smoke': dict(trials=1, warmup='2s', duration='3s', ramp='1s'),
             'qualification': dict(trials=3, warmup='15s', duration='60s', ramp='5s')}
 
 
+def ramsql_banks(suite, table_slots):
+    if suite == 'size-scaling':
+        rows = list(SIZES)
+    else:
+        rows = [5, 200, 20, 1000, 50000, 1000000 if suite == 'sales-subset' else 5000000]
+    if type(table_slots) is not int or table_slots < len(rows):
+        raise ValueError('RAMSQL has fewer compiled table slots than the original dataset')
+    rows.extend([1] * (table_slots - len(rows)))
+    versions = [max(2, count * 2) for count in rows]
+    if suite == 'sales-full':
+        versions[5] = rows[5] + 65536
+    return rows, versions
+
+
 def cases(suite):
     if suite == 'size-scaling':
         return [(f's{size}_{kind}', clients) for size in (100000, 1000000)
@@ -190,10 +204,9 @@ class Campaign:
                 subprocess.run(['docker', 'stop', '-t', '30', self.container], check=True, stdout=subprocess.DEVNULL)
         else:
             if engine == 'ramsql':
-                banks = list(SIZES) + [1, 1] if self.suite == 'size-scaling' else [5, 200, 20, 1000, 50000, 1000000 if self.suite == 'sales-subset' else 5000000, 1, 1]
-                versions = [max(2, n * 2) for n in banks]
-                if self.suite == 'sales-full':
-                    versions[5] = banks[5] + 65536
+                capabilities = json.loads(subprocess.check_output(
+                    [str(self.binary), '--capabilities'], text=True, timeout=30))
+                banks, versions = ramsql_banks(self.suite, capabilities['tables'])
                 workers = min(8, len(os.sched_getaffinity(0)))
                 argv = [str(self.binary), '--serve', '--memory', '--insecure-local', '--port', str(self.port[engine]),
                         '--workers', str(workers), '--max-clients', '12', '--idle-ms', '300000',

@@ -40,6 +40,30 @@ not permission to merge this PR or make a general README claim.**
   reviewer's private INI/password is never used: CI creates its own synthetic-data
   server configuration with `nocache=true` and the vendor's public lab defaults.
 
+## Testing the published RAMSQL binary
+
+Source builds are the default. To test a published Linux x86-64 release,
+set `ramsql.revision` to the exact source commit recorded in its release
+manifest and set `ramsql.release` with these fields.
+
+| Field | Value |
+| --- | --- |
+| `tag` | The immutable GitHub release tag in `SB0LTD/ramsql` |
+| `version` | The manifest's RAMSQL version |
+| `manifest_sha256` | The SHA-256 of the published `release-manifest.json` |
+| `archive_sha256` | The Linux x86-64 archive SHA-256 |
+| `image_sha256` | The binary SHA-256 from the target's hosted runtime evidence |
+
+The installer verifies those three digests and requires matching successful
+hosted runtime evidence for the exact image. The original three-engine
+correctness and timing campaigns run as before. The paired source-build
+diagnostic applies only to source builds because its control must share the
+candidate's dependency and build configuration.
+
+The harness reads the selected binary's compiled table slot count. The first
+six banks keep their original dataset budgets. Remaining slots receive one row
+and two versions for the unchanged capacity probes and other empty tables.
+
 ## Fixed comparison matrix
 
 | Suite | Dataset | Timed cases |

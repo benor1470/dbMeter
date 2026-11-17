@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tarfile
@@ -29,12 +30,85 @@ def download(spec, target):
     return target
 
 
+def workflow_matrices(versions):
+    release = 'release' in versions['ramsql']
+    builds = {'variant': ['ramsql'] if release else ['ramsql', 'ramsql-baseline']}
+    jobs = [dict(suite=suite, kind='live') for suite in ('size-scaling', 'sales-subset', 'sales-full')]
+    jobs.extend(dict(suite=suite, kind='diagnostic') for suite in ('sales-subset', 'sales-full'))
+    if not release:
+        jobs.append(dict(suite='sales-subset', kind='paired'))
+    return builds, {'include': jobs}
+
+
+def install_release(spec, runtime):
+    """Install only the qualified Linux binary from the pinned release archive."""
+    release = spec['release']
+    revision, tag, version = spec['revision'], release['tag'], release['version']
+    if not re.fullmatch(r'[a-f0-9]{40}', revision):
+        raise ValueError('Published RAMSQL revision must be a full commit SHA')
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', tag) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', version):
+        raise ValueError('Invalid release tag or version')
+    for key in ('manifest_sha256', 'archive_sha256', 'image_sha256'):
+        if not re.fullmatch(r'[a-f0-9]{64}', release[key]):
+            raise ValueError(f'Invalid published RAMSQL {key}')
+    target = 'x86_64-linux'
+    prefix = f'ramsql-{version}-{target}'
+    filename = prefix + '.tar.gz'
+    base = f'https://github.com/SB0LTD/ramsql/releases/download/{tag}/'
+    manifest_path = download(
+        dict(url=base + 'release-manifest.json', sha256=release['manifest_sha256']),
+        runtime / 'published' / tag / 'release-manifest.json',
+    )
+    manifest = json.loads(manifest_path.read_text(encoding='utf8'))
+    if (manifest['schema'], manifest['project'], manifest['revision'], manifest['version']) != (1, 'ramsql', revision, version):
+        raise ValueError('Published RAMSQL manifest identity differs from its pin')
+    records = [record for record in manifest['targets'] if record['target'] == target]
+    if len(records) != 1:
+        raise ValueError('Published RAMSQL Linux target must appear exactly once')
+    record = records[0]
+    archives = [asset for asset in record['artifacts'] if asset['file'] == filename]
+    proof = record['hosted_runtime_evidence']
+    if (record['revision'] != revision or record['version'] != version or len(archives) != 1 or
+            archives[0]['sha256'] != release['archive_sha256'] or proof['passed'] is not True or
+            proof['image_sha256'] != release['image_sha256'] or
+            (proof['target'], proof['revision'], proof['version'], proof['archive'], proof['archive_sha256']) !=
+            (target, revision, version, filename, release['archive_sha256'])):
+        raise ValueError('Published RAMSQL archive is missing matching hosted runtime evidence')
+    archive = download(dict(url=base + filename, sha256=release['archive_sha256']), manifest_path.parent / filename)
+    if archive.stat().st_size != archives[0]['bytes']:
+        raise ValueError('Published RAMSQL archive size differs from its manifest')
+    with tarfile.open(archive, mode='r:gz') as contents:
+        members = [member for member in contents.getmembers() if member.name == f'{prefix}/ramsql']
+        if len(members) != 1 or not members[0].isreg():
+            raise ValueError('Published RAMSQL archive must have one regular binary')
+        with contents.extractfile(members[0]) as stream:
+            image = stream.read()
+    image_sha256 = hashlib.sha256(image).hexdigest()
+    if not image.startswith(b'\x7fELF') or image_sha256 != proof['image_sha256']:
+        raise ValueError('Published RAMSQL binary differs from the tested image')
+    binary = runtime / 'ramsql/bin/ramsql'
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(image)
+    binary.chmod(0o755)
+    provenance = dict(source=spec, binary_sha256=image_sha256, published_runtime=proof,
+                      toolchain=record['provenance']['toolchain'], capabilities=record['provenance']['capabilities'])
+    (runtime / 'ramsql-provenance.json').write_text(json.dumps(provenance, indent=2) + '\n', encoding='utf8')
+
+
 def main():
+    if sys.argv[1] == 'workflow-matrices':
+        build, benchmark = workflow_matrices(VERSIONS)
+        print('build=' + json.dumps(build, separators=(',', ':')))
+        print('benchmark=' + json.dumps(benchmark, separators=(',', ':')))
+        return
     RUNTIME.mkdir(exist_ok=True)
     if sys.argv[1] in ('ramsql', 'ramsql-baseline'):
         runtime = RUNTIME if sys.argv[1] == 'ramsql' else RUNTIME / 'baseline-build'
         runtime.mkdir(exist_ok=True)
         spec = VERSIONS['ramsql' if sys.argv[1] == 'ramsql' else 'ramsql_baseline']
+        if 'release' in spec:
+            install_release(spec, runtime)
+            return
         source = download(spec, runtime / 'ramsql-source.tar.gz')
         sdk = download(VERSIONS['sig'], runtime / 'sig.tar.xz')
         for archive, name in [(source, 'source'), (sdk, 'sdk')]:
