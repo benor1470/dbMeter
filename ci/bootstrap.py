@@ -42,11 +42,25 @@ def download(spec, target):
     return target
 
 
+def paired_cache_budgets(versions):
+    configured = versions.get('paired_read_cache_bytes')
+    if configured is None:
+        return None
+    if (not isinstance(configured, dict) or set(configured) != {'baseline', 'candidate'} or
+            any(type(value) is not int or not 0 <= value <= 0xFFFFFFFFFFFFFFFF for value in configured.values()) or
+            configured['baseline'] != 0 or configured['candidate'] <= 0):
+        raise ValueError('Cache comparison requires an uncached control and a positive candidate byte budget')
+    return configured
+
+
 def workflow_matrices(versions, paired_only=False):
     candidate = versions['ramsql']
     baseline = versions.get('ramsql_baseline')
-    paired = 'release' not in candidate and baseline is not None and baseline != candidate
-    builds = {'variant': ['ramsql', 'ramsql-baseline'] if paired else ['ramsql']}
+    cache = paired_cache_budgets(versions)
+    if cache and (not paired_only or 'release' in candidate or baseline != candidate):
+        raise ValueError('Cache experiments require a paired-only dispatch with one pinned source build')
+    paired = 'release' not in candidate and baseline is not None and (baseline != candidate or cache is not None)
+    builds = {'variant': ['ramsql', 'ramsql-baseline'] if paired and cache is None else ['ramsql']}
     if paired_only and not paired:
         raise ValueError('Paired-only dispatch requires distinct pinned source builds')
     jobs = []
@@ -58,6 +72,8 @@ def workflow_matrices(versions, paired_only=False):
         if suite not in ('sales-subset', 'sales-full'):
             raise ValueError('Paired suite must be an original sales suite')
         jobs.append(dict(suite=suite, kind='paired'))
+        if cache is not None:
+            jobs[-1]['single_binary'] = True
     return builds, {'include': jobs}
 
 

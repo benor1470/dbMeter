@@ -17,6 +17,7 @@ class PairedContracts(unittest.TestCase):
     def setUp(self):
         self.enterContext(patch.dict(VERSIONS))
         VERSIONS.pop('paired_dependency_manifests', None)
+        VERSIONS.pop('paired_read_cache_bytes', None)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.folder = Path(self.directory.name)
@@ -98,6 +99,21 @@ class PairedContracts(unittest.TestCase):
             self.campaign['paired_sources']['candidate']['dependency_manifest_sha256'] = 'f' * 64
             with self.assertRaisesRegex(ValueError, 'explicit pins'):
                 summarize_pairs(self.folder, self.campaign)
+
+    def test_cache_comparison_requires_exact_binary_and_budget(self):
+        budgets = {'baseline': 0, 'candidate': 268435456}
+        VERSIONS['ramsql_baseline'] = VERSIONS['ramsql']
+        VERSIONS['paired_read_cache_bytes'] = budgets
+        self.campaign['paired_read_cache_bytes'] = budgets
+        binary = self.campaign['paired_sources']['candidate']
+        self.campaign['paired_sources']['baseline'] = copy.deepcopy(binary)
+        for run in self.campaign['runs']:
+            run['binary_sha256'] = binary['binary_sha256']
+            run['read_cache_bytes'] = budgets[run['variant']]
+        self.assertEqual(len(summarize_pairs(self.folder, self.campaign)['rows']), 4)
+        self.campaign['runs'][0]['read_cache_bytes'] = 1
+        with self.assertRaisesRegex(ValueError, 'cache budget'):
+            summarize_pairs(self.folder, self.campaign)
 
     def test_failed_fresh_check_rejected(self):
         path = self.folder / 'baseline-pair1-checks.xml'

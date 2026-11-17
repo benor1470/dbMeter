@@ -4,7 +4,7 @@ import re
 import statistics
 import sys
 
-from bootstrap import ROOT, RUNTIME, VERSIONS, digest
+from bootstrap import ROOT, RUNTIME, VERSIONS, digest, paired_cache_budgets
 from evidence import MIXED, check_xml, publish, read_run
 from live_benchmark import Campaign
 from runner import host_snapshot
@@ -44,6 +44,10 @@ def validate_sources(proofs):
 
 def summarize_pairs(folder, campaign):
     validate_sources(campaign['paired_sources'])
+    cache = paired_cache_budgets(VERSIONS)
+    if cache and (campaign['paired_read_cache_bytes'] != cache or
+                  campaign['paired_sources']['baseline']['binary_sha256'] != campaign['paired_sources']['candidate']['binary_sha256']):
+        raise ValueError('Cache experiment must use the same pinned executable')
     if campaign.get('diagnostic_only') is not True or campaign.get('merge_allowed') is not False:
         raise ValueError('Paired measurements must remain diagnostic')
     if campaign['suite'] != SUITE or campaign['expected_cases'] != list(CASES):
@@ -61,6 +65,8 @@ def summarize_pairs(folder, campaign):
             raise ValueError('Unexpected/duplicate paired trial')
         if run['binary_sha256'] != campaign['paired_sources'][run['variant']]['binary_sha256']:
             raise ValueError('Paired binary substitution')
+        if cache and run.get('read_cache_bytes') != cache[run['variant']]:
+            raise ValueError('Paired read cache budget differs from its pin')
         values[key] = read_run(folder, campaign, run)
     if values.keys() != expected:
         raise ValueError('Missing paired trial; partial runs are not scored')
@@ -84,15 +90,21 @@ class PairedCampaign(Campaign):
     def __init__(self):
         super().__init__(SUITE, 'qualification')
         self.candidate_binary = self.binary
-        self.baseline_binary = RUNTIME / 'downloaded-baseline/ramsql/bin/ramsql'
-        self.baseline_binary.chmod(0o755)
-        baseline = json.loads((RUNTIME / 'downloaded-baseline/ramsql-provenance.json').read_text())
+        self.cache_budgets = paired_cache_budgets(VERSIONS)
+        if self.cache_budgets is None:
+            self.baseline_binary = RUNTIME / 'downloaded-baseline/ramsql/bin/ramsql'
+            self.baseline_binary.chmod(0o755)
+            baseline = json.loads((RUNTIME / 'downloaded-baseline/ramsql-provenance.json').read_text())
+        else:
+            self.baseline_binary = self.candidate_binary
+            baseline = self.ram_provenance
         if digest(self.baseline_binary) != baseline['binary_sha256']:
             raise ValueError('Downloaded baseline artifact changed')
         self.report.update(diagnostic_only=True, merge_allowed=False,
             scope='Paired RAMSQL control/candidate; not reference-engine or full-suite qualification',
             expected_cases=list(CASES), paired_order=ORDER, paired_focus=FOCUS,
-            paired_sources=dict(baseline=baseline, candidate=self.ram_provenance), paired_admission={})
+            paired_sources=dict(baseline=baseline, candidate=self.ram_provenance), paired_admission={},
+            paired_read_cache_bytes=self.cache_budgets, paired_read_cache={})
         validate_sources(self.report['paired_sources'])
         self.save()
 
@@ -108,8 +120,10 @@ class PairedCampaign(Campaign):
         for pair, order in enumerate(ORDER, 1):
             for mode in order:
                 self.binary = self.candidate_binary if mode == 'candidate' else self.baseline_binary
+                self.ramsql_read_cache_bytes = self.cache_budgets[mode] if self.cache_budgets else 0
                 with self.running('ramsql'):
                     self.report['paired_admission'][f'{mode}/{pair}'] = self.report['ramsql_machine_capacity']
+                    self.report['paired_read_cache'][f'{mode}/{pair}'] = self.report['ramsql_read_cache']
                     for source in self.data_files:
                         self.psql(source)
                     name = f'{mode}-pair{pair}-checks'
@@ -131,6 +145,7 @@ class PairedCampaign(Campaign):
                         raw = target / 'local.json'
                         self.report['runs'].append(dict(engine='ramsql', variant=mode, trial=pair, case=case,
                             binary_sha256=self.report['paired_sources'][mode]['binary_sha256'], returncode=code,
+                            read_cache_bytes=self.ramsql_read_cache_bytes,
                             report=str(raw.relative_to(self.out)) if raw.exists() else None,
                             host_before=before, host_after=host_snapshot()))
                         self.save()
@@ -149,6 +164,8 @@ class PairedCampaign(Campaign):
                  self.report['ci']['run_url'], '',
                  '| Original case / clients | Baseline QPS median | Candidate QPS median | Paired candidate/baseline ratios |',
                  '| --- | ---: | ---: | --- |']
+        if self.cache_budgets:
+            lines[4:4] = ['The same executable ran with caching disabled and with the pinned cache budget. Both variants use the original warmup phase.', '']
         for row in result['rows']:
             lines.append('| ' + ' | '.join([row['case'], f"{row['engines']['baseline']['median_qps']:.2f}",
                 f"{row['engines']['candidate']['median_qps']:.2f}", ', '.join(f'{r:.3f}' for r in row['paired_qps_ratios'])]) + ' |')

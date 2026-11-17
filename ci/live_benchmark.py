@@ -154,6 +154,7 @@ class Campaign:
         self.ram_provenance = json.loads((RUNTIME / 'downloaded-ramsql/ramsql-provenance.json').read_text())
         if digest(self.binary) != self.ram_provenance['binary_sha256']:
             raise ValueError('Downloaded RAMSQL artifact changed')
+        self.ramsql_read_cache_bytes = 0
         self.folder = ROOT / 'examples' / {'size-scaling': 'size-scaling', 'sales-subset': 'sales-agg-subset', 'sales-full': 'sales-agg'}[suite]
         self.configs = {}
         self.data_files = []
@@ -224,12 +225,22 @@ class Campaign:
                         '--workers', str(workers), '--max-clients', '12', '--idle-ms', '300000',
                         '--table-rows', ','.join(map(str, banks)), '--table-versions', ','.join(map(str, versions)),
                         '--work-rows', '4096' if self.suite == 'size-scaling' else '65536', '--result-rows', '2048']
-                self.report['ramsql_server_arguments'] = argv[1:]
                 capacity_flags = ('--workers', '--max-clients', '--table-rows', '--table-versions', '--work-rows', '--result-rows')
                 probe = [str(self.binary), '--machine-capacity']
                 for flag in capacity_flags:
                     index = argv.index(flag)
                     probe += argv[index:index + 2]
+                if self.ramsql_read_cache_bytes:
+                    flags = ['--read-cache-bytes', str(self.ramsql_read_cache_bytes)]
+                    argv += flags
+                    probe += flags
+                    planned = json.loads(subprocess.check_output([str(self.binary), '--capabilities', *probe[2:]], text=True, timeout=30))
+                    if not 0 < planned['read_cache_bytes'] <= self.ramsql_read_cache_bytes or planned['read_cache_entries'] <= 0:
+                        raise RuntimeError('RAMSQL did not admit the pinned read cache budget')
+                    self.report['ramsql_read_cache'] = {key: planned[key] for key in ('read_cache_bytes', 'read_cache_entries', 'read_cache_rows_per_entry')}
+                else:
+                    self.report['ramsql_read_cache'] = {'read_cache_bytes': 0, 'read_cache_entries': 0}
+                self.report['ramsql_server_arguments'] = argv[1:]
                 self.report['ramsql_machine_capacity'] = json.loads(subprocess.check_output(probe, text=True, timeout=30))
                 self.save()
             else:

@@ -121,6 +121,16 @@ class MatrixAndBankTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             workflow_matrices({'ramsql': {}}, paired_only=True)
 
+    def test_cache_experiment_uses_one_image_and_cannot_enter_live_gate(self):
+        source = {'revision': 'same'}
+        versions = {'ramsql': source, 'ramsql_baseline': dict(source), 'paired_suite': 'sales-full',
+                    'paired_read_cache_bytes': {'baseline': 0, 'candidate': 268435456}}
+        with self.assertRaisesRegex(ValueError, 'paired-only'):
+            workflow_matrices(versions)
+        builds, jobs = workflow_matrices(versions, paired_only=True)
+        self.assertEqual(builds['variant'], ['ramsql'])
+        self.assertEqual(jobs['include'], [{'suite': 'sales-full', 'kind': 'paired', 'single_binary': True}])
+
     def test_capacity_profile_has_only_typed_build_options(self):
         self.assertEqual(source_capacity_flags({}), [])
         self.assertEqual(

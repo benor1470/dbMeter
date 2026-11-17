@@ -160,6 +160,13 @@ uses segment/discount for dimension group IDs. Changing the diagnostic focus
 does not change any original SQL, expected CSV, weighted mix or advantage-gate
 case. The focused scenario and all trial settings remain in every report.
 
+For a result-cache experiment, give both variants the same pinned executable
+and set `paired_read_cache_bytes` with a zero `baseline` and a positive
+`candidate`. Dispatch with `paired_only=true`. The run records each variant's
+admitted cache configuration and keeps the original SQL, data, checks and
+warmup. These measurements compare RAMSQL with and without its cache on one
+runner. The all-engine qualification continues to use the uncached workload.
+
 ## Permission to merge and claim an advantage
 
 The **Significant advantage required before merge** job fails unless all three
