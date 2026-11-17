@@ -60,6 +60,18 @@ class GateContracts(unittest.TestCase):
     def test_complete_qualification_fixture_passes(self):
         self.assertTrue(self.result()['qualified'])
 
+    def test_correctness_outcome_is_independent_of_timing_evidence(self):
+        self.campaign['runs'] = []
+        result = self.result()
+        self.assertTrue(result['correctness_evidence_passed'])
+        self.assertFalse(result['qualified'])
+
+        self.campaign['checks']['ramsql'] = False
+        result = self.result()
+        self.assertFalse(result['correctness_evidence_passed'])
+        self.assertIn('Original correctness checks did not pass for all three engines',
+                      result['correctness_issues'])
+
     def test_release_campaign_requires_pinned_binary(self):
         release_source = dict(VERSIONS['ramsql'], release={'image_sha256': 'c' * 64})
         self.campaign['ramsql']['source'] = release_source

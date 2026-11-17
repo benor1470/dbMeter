@@ -142,6 +142,7 @@ def summarize(folder):
     release = VERSIONS['ramsql'].get('release')
     if release and campaign['ramsql']['binary_sha256'] != release['image_sha256']:
         issues.append('RAMSQL binary differs from pinned published release')
+    correctness_issues = sorted(set(issues))
     grouped = defaultdict(list)
     seen = set()
     for run in campaign['runs']:
@@ -177,7 +178,9 @@ def summarize(folder):
     qualifies = campaign['profile'] == 'qualification' and not issues and all(row['advantage'] for row in rows)
     return dict(schema=1, suite=suite, profile=campaign['profile'], qualified=qualifies,
                 source_revision=campaign['ramsql']['source']['revision'], binary_sha256=campaign['ramsql']['binary_sha256'],
-                input_revision=campaign['input_revision'], ci=campaign.get('ci', {}), issues=sorted(set(issues)), rows=rows)
+                input_revision=campaign['input_revision'], ci=campaign.get('ci', {}),
+                correctness_evidence_passed=not correctness_issues, correctness_issues=correctness_issues,
+                issues=sorted(set(issues)), rows=rows)
 
 
 def markdown(summary):
@@ -186,6 +189,9 @@ def markdown(summary):
              'All rates are queries/transactions per second at the original JDBC boundary. Bold ratios highlight at least 2× measured leads, including limited leads that do not pass the full gate.', '',
              '| Workload / clients | RAMSQL | PostgreSQL | IRDB | RAMSQL / fastest reference |',
              '| --- | ---: | ---: | ---: | ---: |']
+    if 'correctness_evidence_passed' in summary:
+        status = 'passed' if summary['correctness_evidence_passed'] else 'failed'
+        lines[4:4] = [f'Original correctness and capacity evidence: **{status}**.', '']
     if summary.get('ci', {}).get('run_url'):
         lines[2:2] = [f"Evidence: {summary['ci']['run_url']}", '']
     for row in summary['rows']:
@@ -224,10 +230,13 @@ def main():
             summary = summarize(folder)
         except (OSError, ValueError, KeyError, TypeError) as error:
             summary = dict(suite=args.suite, profile='unknown', qualified=False, rows=[], issues=['Incomplete/unreadable evidence: ' + str(error)])
+        passed = summary.get('correctness_evidence_passed') is True
         (folder / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
         text = markdown(summary)
         (folder / 'summary.md').write_text(text)
         publish(text)
+        if not passed:
+            raise SystemExit(1)
     else:
         revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
         current_ci = actions_context(revision)
