@@ -131,6 +131,74 @@ jobs:
               ], check=False)
           raise SystemExit(result.returncode)
           PY
+      - name: Capture supplemental native DECLARE and APPLY observations
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          python -m pip install --disable-pip-version-check python-tds==1.17.1
+          export MSSQL_SA_PASSWORD="$(python -c 'import secrets; print("ZpmSql!1" + secrets.token_urlsafe(24))')"
+          echo "::add-mask::$MSSQL_SA_PASSWORD"
+          if ! docker image inspect "$ORACLE_IMAGE" >/dev/null; then
+            docker pull "$ORACLE_IMAGE"
+          fi
+          container="$(docker run --detach --rm --publish 127.0.0.1::1433 \
+            --env ACCEPT_EULA=Y --env MSSQL_PID=Developer --env MSSQL_SA_PASSWORD "$ORACLE_IMAGE")"
+          cleanup() {
+            docker logs "$container" > evidence/sqlserver-diagnostics-service.log 2>&1 || true
+            docker stop "$container" >/dev/null || true
+          }
+          trap cleanup EXIT
+          oracle="$(docker port "$container" 1433/tcp)"
+          export ORACLE_PORT="${oracle##*:}"
+          PYTHONPATH=tests/sql_conformance python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from audit_tsql import capture_case, manifest_cases, pytds, server_identity, SERVER_VERSION
+
+          def connect():
+              return pytds.connect(
+                  server="127.0.0.1", port=int(os.environ["ORACLE_PORT"]), user="sa",
+                  password=os.environ["MSSQL_SA_PASSWORD"], database="tempdb", autocommit=False,
+                  use_mars=False, login_timeout=3, timeout=30, disable_connect_retry=True,
+              )
+
+          identity = server_identity(connect, 180)
+          assert identity["version"] == SERVER_VERSION
+          manifest, setup, _ = manifest_cases()
+          projections = "SELECT a.id AS left_id,b.id AS right_id,b.v AS right_value FROM tdd_a a "
+          derived = "(SELECT id,v FROM tdd_b WHERE tdd_b.id=a.id) b"
+          probes = [
+              ("DECLARE_INITIALIZED", "DECLARE @x INT=1"),
+              ("DECLARE_NULL", "DECLARE @x INT=NULL"),
+              ("DECLARE_UNINITIALIZED", "DECLARE @x INT"),
+              ("DECLARE_PAIR", "DECLARE @x INT=1; DECLARE @y INT=2"),
+              ("DECLARE_PAIR_SELECT", "DECLARE @x INT=1; DECLARE @y INT=NULL; SELECT @x AS x,@y AS y"),
+              ("DECLARE_NULL_SELECT", "DECLARE @x INT=NULL; SELECT @x AS value"),
+              ("INNER_JOIN_IMAGES", projections + "INNER JOIN tdd_b b ON b.id=a.id ORDER BY a.id"),
+              ("LEFT_JOIN_IMAGES", projections + "LEFT JOIN tdd_b b ON b.id=a.id ORDER BY a.id"),
+              ("CROSS_APPLY_IMAGES", projections + "CROSS APPLY" + derived + " ORDER BY a.id"),
+              ("OUTER_APPLY_IMAGES", projections + "OUTER APPLY" + derived + " ORDER BY a.id"),
+          ]
+          report = {
+              "scope": "supplemental_native_observations",
+              "oracle_server": identity,
+              "oracle_image": os.environ["ORACLE_IMAGE"],
+              "inventory_manifest_sha256": manifest,
+              "cases": [
+                  capture_case(connect, setup, {"id": identifier, "ordered": True, "statements": [sql]})
+                  for identifier, sql in probes
+              ],
+          }
+          Path("evidence/tsql-native-diagnostics.json").write_text(
+              json.dumps(report, indent=2) + "\n", encoding="utf-8",
+          )
+          for case in report["cases"]:
+              print(case["id"], case["status"], flush=True)
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
