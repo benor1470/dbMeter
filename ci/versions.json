@@ -1,22 +1,96 @@
 {
   "ramsql": {
-    "revision": "f180227318fc6edf9383db58cf65fd21028bf47e",
-    "url": "https://github.com/SB0LTD/ramsql/archive/f180227318fc6edf9383db58cf65fd21028bf47e.tar.gz",
-    "sha256": "a0b35503a2ed195e492dbc2d85b1ed3e79ae661e181032a2c68a8ee16db01a71",
+    "revision": "1db63a45445b6039cc2b2497c6e9a9344bebd8db",
+    "url": "https://github.com/SB0LTD/ramsql/archive/1db63a45445b6039cc2b2497c6e9a9344bebd8db.tar.gz",
+    "sha256": "87e2e388936cc37783283da8bc613f38086c1964bcf4fc2d77efa44068c1ed27",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
-      "text-bytes": 200
+      "text-bytes": 200,
+      "integral-version-banks": true
+    },
+    "integral_bank_words": {
+      "sales-full": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
     }
   },
   "ramsql_baseline": {
-    "revision": "f180227318fc6edf9383db58cf65fd21028bf47e",
-    "url": "https://github.com/SB0LTD/ramsql/archive/f180227318fc6edf9383db58cf65fd21028bf47e.tar.gz",
-    "sha256": "a0b35503a2ed195e492dbc2d85b1ed3e79ae661e181032a2c68a8ee16db01a71",
+    "revision": "1db63a45445b6039cc2b2497c6e9a9344bebd8db",
+    "url": "https://github.com/SB0LTD/ramsql/archive/1db63a45445b6039cc2b2497c6e9a9344bebd8db.tar.gz",
+    "sha256": "87e2e388936cc37783283da8bc613f38086c1964bcf4fc2d77efa44068c1ed27",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
-      "text-bytes": 200
+      "text-bytes": 200,
+      "integral-version-banks": true
+    },
+    "integral_bank_words": {
+      "sales-full": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
     }
   },
   "sig": {
