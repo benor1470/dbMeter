@@ -1,8 +1,8 @@
 {
   "ramsql": {
-    "revision": "c7582d2ebf4aae79ffdf78651e5e142798ddb526",
-    "url": "https://github.com/SB0LTD/ramsql/archive/c7582d2ebf4aae79ffdf78651e5e142798ddb526.tar.gz",
-    "sha256": "86f2d24a3439ed0e30bff8ef93417c60ef3e48c67967a1dab9913ad5dde0db17",
+    "revision": "63d6c62de10d3b8ff2d686fc8e92367192a07329",
+    "url": "https://github.com/SB0LTD/ramsql/archive/63d6c62de10d3b8ff2d686fc8e92367192a07329.tar.gz",
+    "sha256": "17a6782b6c6e133ec94a5c7a78536bc3da5af18976dbd664f2909b1380b13477",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -47,9 +47,9 @@
     }
   },
   "ramsql_baseline": {
-    "revision": "0d5c6b444f802e9b8ae63c5ecfc2b212b94910ea",
-    "url": "https://github.com/SB0LTD/ramsql/archive/0d5c6b444f802e9b8ae63c5ecfc2b212b94910ea.tar.gz",
-    "sha256": "de43f6ca6162f9c9a61dc23136150b1d46f3b1197b6fa098bf052c32d2744ca8",
+    "revision": "63d6c62de10d3b8ff2d686fc8e92367192a07329",
+    "url": "https://github.com/SB0LTD/ramsql/archive/63d6c62de10d3b8ff2d686fc8e92367192a07329.tar.gz",
+    "sha256": "17a6782b6c6e133ec94a5c7a78536bc3da5af18976dbd664f2909b1380b13477",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -94,8 +94,8 @@
     }
   },
   "sig": {
-    "url": "https://github.com/SB0LTD/sig/releases/download/sig-0.6.4-zig0.17.0.90a898d/sig-0.6.4-zig0.17.0.90a898d-x86_64-linux.tar.xz",
-    "sha256": "8dd32622531b5f81dbb12502c78e187141dd42ea3553f4d9e2c09c3e82d64a89"
+    "url": "https://github.com/SB0LTD/sig/releases/download/sig-0.6.5-zig0.17.0.3c72687/sig-0.6.5-zig0.17.0.3c72687-x86_64-linux.tar.xz",
+    "sha256": "179094228e2e6b0db3a5a1e01a8a57e8e91db6aa3b5ca80094ca22d870cc373a"
   },
   "postgres_jdbc": {
     "url": "https://repo.maven.apache.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar",
@@ -115,7 +115,8 @@
   "paired_focus": "q3_top_products",
   "paired_suite": "sales-full",
   "paired_dependency_manifests": {
-    "baseline": "f0e103bcf9e81a2270fd4c51e7e10cb53bcd019d40202dc1c8c249ded105b99a",
-    "candidate": "5daf408be4a303e9bda8fb1d0524b5a81b3cfa5ae8034887718ad077388a1389"
-  }
+    "baseline": "ed0d136e895559fa9c8d596ae0b61125f87f2cdf08b64e906b5b2faaed261b2c",
+    "candidate": "ed0d136e895559fa9c8d596ae0b61125f87f2cdf08b64e906b5b2faaed261b2c"
+  },
+  "paired_query_helpers": true
 }

@@ -40,10 +40,37 @@ def validate_sources(proofs):
             raise ValueError('Paired dependency manifests differ from the explicit pins')
     elif manifests['baseline'] != manifests['candidate']:
         raise ValueError('Paired dependency manifests differ')
+    if VERSIONS.get('paired_query_helpers') and proofs['baseline'] != proofs['candidate']:
+        raise ValueError('Query-helper A/B must use the same complete binary provenance')
+
+
+def validate_helpers(campaign):
+    if not VERSIONS.get('paired_query_helpers'):
+        return
+    common = None
+    for pair in (1, 2, 3):
+        for mode, helpers in (('baseline', 0), ('candidate', 1)):
+            key = f'{mode}/{pair}'
+            args = list(campaign['paired_server_arguments'][key])
+            plan = campaign['paired_admission'][key]
+            index = args.index('--query-helpers')
+            if args[index + 1] != str(helpers):
+                raise ValueError('Incorrect runtime helper variant')
+            del args[index:index + 2]
+            if common is None:
+                common = args
+            if args != common:
+                raise ValueError('Runtime arguments differ beyond the helper option')
+            workers = int(args[args.index('--workers') + 1])
+            if (workers < 2 or workers != plan['read_workers'] or workers + helpers > plan['suggested_cpu_workers']
+                    or helpers != plan['query_helpers'] or bool(helpers) != (plan['query_helper_reserved_bytes'] > 0)
+                    or not plan['startup_fits']):
+                raise ValueError('Invalid CPU or memory helper admission')
 
 
 def summarize_pairs(folder, campaign):
     validate_sources(campaign['paired_sources'])
+    validate_helpers(campaign)
     if campaign.get('diagnostic_only') is not True or campaign.get('merge_allowed') is not False:
         raise ValueError('Paired measurements must remain diagnostic')
     if campaign['suite'] != SUITE or campaign['expected_cases'] != list(CASES):
@@ -84,15 +111,20 @@ class PairedCampaign(Campaign):
     def __init__(self):
         super().__init__(SUITE, 'qualification')
         self.candidate_binary = self.binary
-        self.baseline_binary = RUNTIME / 'downloaded-baseline/ramsql/bin/ramsql'
-        self.baseline_binary.chmod(0o755)
-        baseline = json.loads((RUNTIME / 'downloaded-baseline/ramsql-provenance.json').read_text())
+        if VERSIONS.get('paired_query_helpers'):
+            self.baseline_binary = self.candidate_binary
+            baseline = self.ram_provenance
+            self.helper_variant = 1
+        else:
+            self.baseline_binary = RUNTIME / 'downloaded-baseline/ramsql/bin/ramsql'
+            self.baseline_binary.chmod(0o755)
+            baseline = json.loads((RUNTIME / 'downloaded-baseline/ramsql-provenance.json').read_text())
         if digest(self.baseline_binary) != baseline['binary_sha256']:
             raise ValueError('Downloaded baseline artifact changed')
         self.report.update(diagnostic_only=True, merge_allowed=False,
             scope='Paired RAMSQL control/candidate; not reference-engine or full-suite qualification',
             expected_cases=list(CASES), paired_order=ORDER, paired_focus=FOCUS,
-            paired_sources=dict(baseline=baseline, candidate=self.ram_provenance), paired_admission={})
+            paired_sources=dict(baseline=baseline, candidate=self.ram_provenance), paired_admission={}, paired_server_arguments={})
         validate_sources(self.report['paired_sources'])
         self.save()
 
@@ -109,8 +141,11 @@ class PairedCampaign(Campaign):
             for mode in order:
                 self.binary = self.candidate_binary if mode == 'candidate' else self.baseline_binary
                 self.ramsql_source = self.report['paired_sources'][mode]['source']
+                if VERSIONS.get('paired_query_helpers'):
+                    self.helper_variant = int(mode == 'candidate')
                 with self.running('ramsql'):
                     self.report['paired_admission'][f'{mode}/{pair}'] = self.report['ramsql_machine_capacity']
+                    self.report['paired_server_arguments'][f'{mode}/{pair}'] = self.report['ramsql_server_arguments']
                     for source in self.data_files:
                         self.psql(source)
                     name = f'{mode}-pair{pair}-checks'

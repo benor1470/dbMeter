@@ -7,16 +7,17 @@ import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
-from bootstrap import VERSIONS
+from bootstrap import VERSIONS, workflow_matrices
 from evidence import MIXED
 from live_benchmark import PROFILES
-from paired_benchmark import CASES, ORDER, SUITE, summarize_pairs, paired_cases
+from paired_benchmark import CASES, ORDER, SUITE, summarize_pairs, paired_cases, validate_helpers
 
 
 class PairedContracts(unittest.TestCase):
     def setUp(self):
         self.enterContext(patch.dict(VERSIONS))
         VERSIONS.pop('paired_dependency_manifests', None)
+        VERSIONS.pop('paired_query_helpers', None)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.folder = Path(self.directory.name)
@@ -50,6 +51,34 @@ class PairedContracts(unittest.TestCase):
         self.assertEqual(len(result['rows']), 4)
         for row in result['rows']:
             self.assertEqual(row['paired_qps_ratios'], [2, 2, 2])
+
+    def test_same_binary_diagnostic_never_runs_the_all_engine_gate(self):
+        versions = {'ramsql': {'revision': 'same'}, 'ramsql_baseline': {'revision': 'same'},
+                    'paired_query_helpers': True}
+        self.assertEqual(workflow_matrices(versions, paired_only=True),
+                         ({'variant': ['ramsql']}, {'include': [
+                             {'suite': 'sales-full', 'kind': 'paired', 'same_binary': True}]}))
+        with self.assertRaises(ValueError):
+            workflow_matrices(versions)
+
+    def test_helper_pair_rejects_changed_workers_and_missing_grant(self):
+        VERSIONS['paired_query_helpers'] = True
+        self.campaign.update(paired_server_arguments={}, paired_admission={})
+        for pair in (1, 2, 3):
+            for mode, helpers in (('baseline', 0), ('candidate', 1)):
+                case = f'{mode}/{pair}'
+                self.campaign['paired_server_arguments'][case] = ['--workers', '3', '--query-helpers', str(helpers)]
+                self.campaign['paired_admission'][case] = dict(
+                    read_workers=3, suggested_cpu_workers=4, startup_fits=True,
+                    query_helpers=helpers, query_helper_reserved_bytes=5_242_880 * helpers)
+        validate_helpers(self.campaign)
+        self.campaign['paired_admission']['candidate/1']['query_helper_reserved_bytes'] = 0
+        with self.assertRaises(ValueError):
+            validate_helpers(self.campaign)
+        self.campaign['paired_admission']['candidate/1']['query_helper_reserved_bytes'] = 5_242_880
+        self.campaign['paired_server_arguments']['candidate/1'][1] = '2'
+        with self.assertRaises(ValueError):
+            validate_helpers(self.campaign)
 
     def test_focus_keeps_mix_and_original_scenario_only(self):
         for focus in MIXED['sales-subset']:

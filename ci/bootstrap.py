@@ -45,6 +45,10 @@ def download(spec, target):
 def workflow_matrices(versions, paired_only=False):
     candidate = versions['ramsql']
     baseline = versions.get('ramsql_baseline')
+    if versions.get('paired_query_helpers'):
+        if not paired_only or baseline != candidate:
+            raise ValueError('Query-helper diagnostics require paired-only dispatch of the same binary')
+        return {'variant': ['ramsql']}, {'include': [dict(suite='sales-full', kind='paired', same_binary=True)]}
     paired = 'release' not in candidate and baseline is not None and baseline != candidate
     builds = {'variant': ['ramsql', 'ramsql-baseline'] if paired else ['ramsql']}
     if paired_only and not paired:

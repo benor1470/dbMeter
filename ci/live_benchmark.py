@@ -231,11 +231,23 @@ class Campaign:
                     [str(self.binary), '--capabilities'], text=True, timeout=30))
                 banks, versions = ramsql_banks(self.suite, capabilities['tables'])
                 workers = min(8, len(os.sched_getaffinity(0)))
+                helper_variant = getattr(self, 'helper_variant', None)
+                if helper_variant is not None:
+                    if not hasattr(self, 'helper_reactors'):
+                        cpu = json.loads(subprocess.check_output(
+                            [str(self.binary), '--machine-capacity', '--workers', '2'], text=True, timeout=30))
+                        self.helper_reactors = min(workers, cpu['suggested_cpu_workers']) - 1
+                        if self.helper_reactors < 2:
+                            raise RuntimeError('The A/B requires at least three admitted logical CPUs')
+                    workers = self.helper_reactors
                 argv = [str(self.binary), '--serve', '--memory', '--insecure-local', '--port', str(self.port[engine]),
                         '--workers', str(workers), '--max-clients', '12', '--idle-ms', '300000',
                         '--table-rows', ','.join(map(str, banks)), '--table-versions', ','.join(map(str, versions)),
                         '--work-rows', '4096' if self.suite == 'size-scaling' else '65536', '--result-rows', '2048']
                 capacity_flags = ('--workers', '--max-clients', '--table-rows', '--table-versions', '--work-rows', '--result-rows')
+                if helper_variant is not None:
+                    argv += ['--query-helpers', str(helper_variant)]
+                    capacity_flags += ('--query-helpers',)
                 probe = [str(self.binary), '--machine-capacity']
                 for flag in capacity_flags:
                     index = argv.index(flag)
