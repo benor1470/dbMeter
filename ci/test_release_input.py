@@ -12,7 +12,7 @@ from urllib.error import HTTPError
 from bootstrap import source_capacity_flags
 
 from bootstrap import digest, download, install_release, workflow_matrices
-from live_benchmark import SIZES, ramsql_banks
+from live_benchmark import SIZES, integral_bank_words, ramsql_banks
 
 
 class ReleaseInputTests(unittest.TestCase):
@@ -140,6 +140,17 @@ class MatrixAndBankTests(unittest.TestCase):
         self.assertEqual(full_versions[5:], [5000000 + 65536] + [2] * 26)
         with self.assertRaisesRegex(ValueError, 'fewer compiled table slots'):
             ramsql_banks('sales-subset', 5)
+
+    def test_integral_bank_profile_binds_exact_runtime_strides(self):
+        spec = {'capacity_profile': {'integral-version-banks': True},
+                'integral_bank_words': {'sales-full': [0, 0, 0, 0, 0, 6]}}
+        self.assertEqual(source_capacity_flags(spec), ['-Dintegral-version-banks=true'])
+        self.assertIsNone(integral_bank_words(spec, 'size-scaling', 6))
+        self.assertEqual(integral_bank_words(spec, 'sales-full', 6), [0, 0, 0, 0, 0, 6])
+        with self.assertRaises(ValueError):
+            integral_bank_words(spec, 'sales-full', 5)
+        with self.assertRaises(ValueError):
+            source_capacity_flags({'capacity_profile': {'integral-version-banks': 1}})
 
 
 if __name__ == '__main__':
