@@ -1,8 +1,8 @@
 {
   "ramsql": {
-    "revision": "0d5c6b444f802e9b8ae63c5ecfc2b212b94910ea",
-    "url": "https://github.com/SB0LTD/ramsql/archive/0d5c6b444f802e9b8ae63c5ecfc2b212b94910ea.tar.gz",
-    "sha256": "de43f6ca6162f9c9a61dc23136150b1d46f3b1197b6fa098bf052c32d2744ca8",
+    "revision": "b90354c8911b22a340fb68d15383205cd2ccf4b5",
+    "url": "https://github.com/SB0LTD/ramsql/archive/b90354c8911b22a340fb68d15383205cd2ccf4b5.tar.gz",
+    "sha256": "6b26c6194844452be64af51097b7cedf20d7faee3aeed17163b002a86f9aa689",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -47,9 +47,9 @@
     }
   },
   "ramsql_baseline": {
-    "revision": "0d5c6b444f802e9b8ae63c5ecfc2b212b94910ea",
-    "url": "https://github.com/SB0LTD/ramsql/archive/0d5c6b444f802e9b8ae63c5ecfc2b212b94910ea.tar.gz",
-    "sha256": "de43f6ca6162f9c9a61dc23136150b1d46f3b1197b6fa098bf052c32d2744ca8",
+    "revision": "b90354c8911b22a340fb68d15383205cd2ccf4b5",
+    "url": "https://github.com/SB0LTD/ramsql/archive/b90354c8911b22a340fb68d15383205cd2ccf4b5.tar.gz",
+    "sha256": "6b26c6194844452be64af51097b7cedf20d7faee3aeed17163b002a86f9aa689",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -94,8 +94,8 @@
     }
   },
   "sig": {
-    "url": "https://github.com/SB0LTD/sig/releases/download/sig-0.6.4-zig0.17.0.90a898d/sig-0.6.4-zig0.17.0.90a898d-x86_64-linux.tar.xz",
-    "sha256": "8dd32622531b5f81dbb12502c78e187141dd42ea3553f4d9e2c09c3e82d64a89"
+    "url": "https://github.com/SB0LTD/sig/releases/download/sig-0.6.5-zig0.17.0.3c72687/sig-0.6.5-zig0.17.0.3c72687-x86_64-linux.tar.xz",
+    "sha256": "179094228e2e6b0db3a5a1e01a8a57e8e91db6aa3b5ca80094ca22d870cc373a"
   },
   "postgres_jdbc": {
     "url": "https://repo.maven.apache.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar",
