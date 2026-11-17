@@ -23,6 +23,9 @@ TABLES = ('regions', 'stores', 'categories', 'products', 'customers', 'sales')
 PROFILES = {'smoke': dict(trials=1, warmup='2s', duration='3s', ramp='1s'),
             'qualification': dict(trials=3, warmup='15s', duration='60s', ramp='5s')}
 
+# Normalized input manifest from reviewer revision b7d17917646d84d89afd211f7d2b8c5b6bd98679.
+ORIGINAL_INPUTS_SHA256 = '4cdaa752aed6298d69d17ac655f203f3df1bd8437e4ecdbfd178a55749515235'
+
 
 def ramsql_banks(suite, table_slots):
     if suite == 'size-scaling':
@@ -64,6 +67,14 @@ def wait_port(port, child=None):
     raise TimeoutError('Owned database did not become ready')
 
 
+def check_original_inputs(hashes):
+    if not isinstance(hashes, dict) or not hashes:
+        raise ValueError('Original input integrity manifest missing')
+    data = json.dumps(hashes, sort_keys=True, separators=(',', ':')).encode('ascii')
+    if hashlib.sha256(data).hexdigest() != ORIGINAL_INPUTS_SHA256:
+        raise ValueError('Input manifest differs from the original reviewer files')
+
+
 def original_inputs():
     # New CI files do not alter the reviewer's Java/SQL/expected input files.
     names = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT).decode().strip('\0').split('\0')
@@ -76,6 +87,7 @@ def original_inputs():
         if actual != expected:
             raise ValueError('Original input was modified: ' + name)
         hashes[name] = hashlib.sha256(actual).hexdigest()
+    check_original_inputs(hashes)
     return hashes
 
 

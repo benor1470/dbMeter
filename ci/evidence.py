@@ -10,7 +10,7 @@ import subprocess
 import xml.etree.ElementTree as ET
 
 from bootstrap import ROOT, VERSIONS
-from live_benchmark import cases, PROFILES, ENGINES
+from live_benchmark import cases, check_original_inputs, PROFILES, ENGINES
 from runner import validate_ci, actions_context, validate_same_run
 
 SUITES = ('size-scaling', 'sales-subset', 'sales-full')
@@ -135,8 +135,10 @@ def summarize(folder):
             check_xml(folder / 'ramsql-capabilities.xml', CAPABILITY_CHECKS)
         except (OSError, ValueError, KeyError, ET.ParseError) as error:
             issues.append('RAMSQL capability evidence: ' + str(error))
-    if not campaign.get('original_input_sha256'):
-        issues.append('Original input integrity manifest missing')
+    try:
+        check_original_inputs(campaign.get('original_input_sha256'))
+    except ValueError as error:
+        issues.append(str(error))
     if campaign['ramsql']['source'] != VERSIONS['ramsql']:
         issues.append('RAMSQL source differs from pinned candidate')
     release = VERSIONS['ramsql'].get('release')

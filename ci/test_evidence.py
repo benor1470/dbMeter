@@ -1,5 +1,6 @@
 """Synthetic gate unit fixtures are never benchmark evidence or live results."""
 import copy
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -18,12 +19,15 @@ class GateContracts(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.folder = Path(self.directory.name)
+        input_manifest = {'unit-test-fixture': 'a' * 64}
+        manifest_bytes = json.dumps(input_manifest, sort_keys=True, separators=(',', ':')).encode('ascii')
+        self.enterContext(patch('live_benchmark.ORIGINAL_INPUTS_SHA256', hashlib.sha256(manifest_bytes).hexdigest()))
         source = VERSIONS['ramsql']
         image_sha = source.get('release', {}).get('image_sha256', 'c' * 64)
         self.campaign = dict(schema=1, suite='sales-subset', profile='qualification', policy=PROFILES['qualification'],
                              expected_cases=[f'{name}/{clients}' for name, clients in cases('sales-subset')],
                              checks=dict.fromkeys(ENGINES, True), completed=True, gaps=[], runs=[],
-                             original_input_sha256={'unit-test-fixture': 'a' * 64},
+                             original_input_sha256=input_manifest,
                              input_revision='b' * 40,
                              ci=dict(provider='github-actions', repository='benor1470/dbMeter', run_id='123',
                                      run_attempt='1', runner_name='synthetic-unit-fixture', runner_os='Linux', checkout_revision='b' * 40),
@@ -206,6 +210,13 @@ class GateContracts(unittest.TestCase):
     def test_source_substitution_blocks_claim(self):
         self.campaign['ramsql']['source']['revision'] = 'd' * 40
         self.assertFalse(self.result()['qualified'])
+
+    def test_reviewer_input_substitution_blocks_correctness_and_claim(self):
+        self.campaign['original_input_sha256']['unit-test-fixture'] = 'd' * 64
+        result = self.result()
+        self.assertFalse(result['correctness_evidence_passed'])
+        self.assertFalse(result['qualified'])
+        self.assertIn('Input manifest differs from the original reviewer files', result['correctness_issues'])
 
     def test_traversal_blocks_claim(self):
         self.campaign['runs'][0]['report'] = '../outside.json'
