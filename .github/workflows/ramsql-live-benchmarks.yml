@@ -10,6 +10,10 @@ on:
         description: 'Three original-duration trials; required before any performance claim'
         type: boolean
         default: true
+      paired_only:
+        description: 'Run only the pinned same-runner diagnostic (no advantage decision)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,6 +36,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Select the build and benchmark matrices
         id: matrices
+        env:
+          PAIRED_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.paired_only }}
         run: python3 ci/bootstrap.py workflow-matrices >> "$GITHUB_OUTPUT"
 
   build:
@@ -132,7 +138,7 @@ jobs:
 
   advantage:
     name: Significant advantage required before merge
-    if: always()
+    if: always() && !(github.event_name == 'workflow_dispatch' && inputs.paired_only)
     needs: [build, benchmark]
     runs-on: ubuntu-24.04
     timeout-minutes: 5

@@ -21,6 +21,7 @@ def paired_cases(focus, suite='sales-subset'):
 
 
 CASES = paired_cases(FOCUS, SUITE)
+REQUIRED_CHECKS = {'a_totals'} | MIXED[SUITE]
 
 
 def validate_sources(proofs):
@@ -63,10 +64,9 @@ def summarize_pairs(folder, campaign):
         values[key] = read_run(folder, campaign, run)
     if values.keys() != expected:
         raise ValueError('Missing paired trial; partial runs are not scored')
-    required = {'a_totals'} | MIXED[SUITE]
     for pair in (1, 2, 3):
         for mode in ('baseline', 'candidate'):
-            check_xml(folder / f'{mode}-pair{pair}-checks.xml', required)
+            check_xml(folder / f'{mode}-pair{pair}-checks.xml', REQUIRED_CHECKS)
     rows = []
     for case in CASES:
         row = dict(case=case, engines={}, paired_qps_ratios=[])
@@ -116,7 +116,7 @@ class PairedCampaign(Campaign):
                     checks = self.out / (name + '.xml')
                     if self.command(name, self.java('check', 'ramsql', ['--junit', str(checks)])):
                         raise RuntimeError('Original full-suite checks failed: ' + mode)
-                    check_xml(checks, {'a_totals'} | MIXED['sales-subset'])
+                    check_xml(checks, REQUIRED_CHECKS)
                     for case in CASES:
                         scenario, clients = case.split('/')
                         name = f'{mode}-pair{pair}-{scenario}-{clients}'

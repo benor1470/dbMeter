@@ -113,6 +113,14 @@ class MatrixAndBankTests(unittest.TestCase):
         self.assertEqual({job['suite'] for job in jobs['include'] if job['kind'] == 'live'},
                          {'size-scaling', 'sales-subset', 'sales-full'})
 
+    def test_paired_only_dispatch_requires_distinct_pins_and_original_suite(self):
+        pins = {'ramsql': {'revision': 'candidate'}, 'ramsql_baseline': {'revision': 'baseline'}, 'paired_suite': 'sales-full'}
+        builds, jobs = workflow_matrices(pins, paired_only=True)
+        self.assertEqual(builds['variant'], ['ramsql', 'ramsql-baseline'])
+        self.assertEqual(jobs['include'], [{'suite': 'sales-full', 'kind': 'paired'}])
+        with self.assertRaises(ValueError):
+            workflow_matrices({'ramsql': {}}, paired_only=True)
+
     def test_capacity_profile_has_only_typed_build_options(self):
         self.assertEqual(source_capacity_flags({}), [])
         self.assertEqual(
