@@ -41,6 +41,16 @@ def ramsql_banks(suite, table_slots):
     return rows, versions
 
 
+def integral_bank_words(spec, suite, table_slots):
+    configured = spec.get('integral_bank_words', {}).get(suite)
+    if configured is None:
+        return None
+    if (not isinstance(configured, list) or len(configured) != table_slots or
+            any(type(words) is not int or not 0 <= words <= 0xFFFFFFFF for words in configured)):
+        raise ValueError('RAMSQL requires one nonnegative integral stride per table slot')
+    return configured
+
+
 def cases(suite):
     if suite == 'size-scaling':
         return [(f's{size}_{kind}', clients) for size in (100000, 1000000)
@@ -155,6 +165,7 @@ class Campaign:
         if digest(self.binary) != self.ram_provenance['binary_sha256']:
             raise ValueError('Downloaded RAMSQL artifact changed')
         self.ramsql_read_cache_bytes = 0
+        self.ramsql_source = self.ram_provenance['source']
         self.folder = ROOT / 'examples' / {'size-scaling': 'size-scaling', 'sales-subset': 'sales-agg-subset', 'sales-full': 'sales-agg'}[suite]
         self.configs = {}
         self.data_files = []
@@ -230,6 +241,19 @@ class Campaign:
                 for flag in capacity_flags:
                     index = argv.index(flag)
                     probe += argv[index:index + 2]
+                integral_words = integral_bank_words(self.ramsql_source, self.suite, capabilities['tables'])
+                if integral_words is not None:
+                    if capabilities.get('integral_version_banks') is not True:
+                        raise RuntimeError('The pinned executable lacks integral version banks')
+                    flags = ['--table-integral-words', ','.join(map(str, integral_words))]
+                    argv += flags
+                    dense = json.loads(subprocess.check_output(probe, text=True, timeout=30))
+                    self.report['ramsql_dense_startup_bytes'] = dense['legacy_startup_bytes']
+                    probe += flags
+                    planned = json.loads(subprocess.check_output([str(self.binary), '--capabilities', *probe[2:]], text=True, timeout=30))
+                    if planned.get('table_integral_words') != integral_words:
+                        raise RuntimeError('RAMSQL did not admit the pinned integral table banks')
+                    self.report['ramsql_backing_bytes'] = planned['backing_bytes']
                 if self.ramsql_read_cache_bytes:
                     flags = ['--read-cache-bytes', str(self.ramsql_read_cache_bytes)]
                     argv += flags

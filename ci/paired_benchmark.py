@@ -120,6 +120,7 @@ class PairedCampaign(Campaign):
         for pair, order in enumerate(ORDER, 1):
             for mode in order:
                 self.binary = self.candidate_binary if mode == 'candidate' else self.baseline_binary
+                self.ramsql_source = self.report['paired_sources'][mode]['source']
                 self.ramsql_read_cache_bytes = self.cache_budgets[mode] if self.cache_budgets else 0
                 with self.running('ramsql'):
                     self.report['paired_admission'][f'{mode}/{pair}'] = self.report['ramsql_machine_capacity']

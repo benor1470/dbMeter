@@ -83,10 +83,15 @@ def source_capacity_flags(spec):
     if profile is None:
         return []
     bounds = {'tables': (1, 65535), 'columns': (1, 255), 'text-bytes': (1, 65535)}
-    if not isinstance(profile, dict) or not profile or not profile.keys() <= bounds.keys():
+    if not isinstance(profile, dict) or not profile or not profile.keys() <= bounds.keys() | {'integral-version-banks'}:
         raise ValueError('Invalid RAMSQL source capacity profile')
     flags = []
     for name, value in sorted(profile.items()):
+        if name == 'integral-version-banks':
+            if type(value) is not bool:
+                raise ValueError('Integral version banks require a boolean build option')
+            flags.append(f'-D{name}={str(value).lower()}')
+            continue
         low, high = bounds[name]
         if type(value) is not int or not low <= value <= high:
             raise ValueError(f'Invalid RAMSQL source capacity: {name}')
