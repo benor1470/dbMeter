@@ -114,6 +114,10 @@
   "postgres_image": "postgres:18.3-bookworm@sha256:80630f83606d8db77d30b3851b16a9f78be2d0d4dda6f7b82a1fdca5ebe3acba",
   "paired_focus": "q6_store_category_mix",
   "paired_suite": "sales-full",
+  "paired_dependency_manifests": {
+    "baseline": "df7ec9e3f0821b0af44d368356eb58e03d1d07428e24910bfd996106c712da73",
+    "candidate": "df7ec9e3f0821b0af44d368356eb58e03d1d07428e24910bfd996106c712da73"
+  },
   "paired_read_cache_bytes": {
     "baseline": 0,
     "candidate": 268435456
