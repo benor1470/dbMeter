@@ -1,8 +1,8 @@
-name: Typed bank 100M star correctness
+name: Typed bank 100M synchronous WAL and recovery
 
 on:
   push:
-    branches: [bench/ramsql-typed-bank-100m-joined-topn-20261117]
+    branches: [bench/ramsql-typed-bank-durable-100m-20261117]
   workflow_dispatch:
 
 permissions:
@@ -15,8 +15,8 @@ jobs:
     env:
       RAMSQL_SOURCE_REVISION: efecbcd683528ffeb4793baafa7ed0c79081f324
       RAMSQL_SOURCE_SHA256: 809a93153714e64b5d05dc717d7e417c864f4fb42b86a0affe1b50a6d95b2908
-      RAMSQL_FIXTURE_REVISION: 30830d2198687b74e7203bd7fff7a5c7e1770edc
-      RAMSQL_FIXTURE_SHA256: 458c00b62ff8b84919ffc7b1933d511429aac67f33d09a44f3e5fe16a990a765
+      RAMSQL_FIXTURE_REVISION: bfdf49a4bf017f65d63590eb4aed0309d0874dce
+      RAMSQL_FIXTURE_SHA256: 7112f0f063e02a5474f7e14aa4bb81ba354d60ef5ed5d27831c3def85b446c8b
     steps:
       - uses: actions/checkout@v4
         with:
@@ -81,37 +81,36 @@ jobs:
               "fixture_revision": os.environ["RAMSQL_FIXTURE_REVISION"],
               "fixture_archive_sha256": os.environ["RAMSQL_FIXTURE_SHA256"],
               "fixture_sha256": hashlib.sha256(Path("fixture/tools/test_large_star_runtime.py").read_bytes()).hexdigest(),
+              "persistence_fixture_sha256": hashlib.sha256(Path("fixture/tools/test_persistence.py").read_bytes()).hexdigest(),
               "workflow_revision": os.environ["GITHUB_SHA"],
               "workflow_repository": os.environ["GITHUB_REPOSITORY"],
               "run_id": os.environ["GITHUB_RUN_ID"],
               "binary_sha256": hashlib.file_digest((path / "ramsql").open("rb"), "sha256").hexdigest(),
               "build_options": ["-Doptimize=ReleaseSafe", "-Dintegral-version-banks=true"],
               "zpm": dependency_provenance(),
-              "scope": "100M six-word facts, two dimensions, two workers, memory only",
+              "scope": "100M six-word facts, two dimensions, two workers, synchronous WAL and abrupt process recovery",
           }
           (path / "provenance.json").write_text(json.dumps(identity, indent=2) + "\n", encoding="utf-8")
           PY
-      - name: Qualify 100M facts and three-table joins over PostgreSQL
+      - name: Check the WAL, restart and joined query contracts on 262144 facts
         run: |
           set -euo pipefail
           python -m pip install -r product/tools/requirements-test.txt
           python product/tools/test_cli.py --binary evidence/ramsql --expect-integral-version-banks
+          df -B1 "$RUNNER_TEMP" | tee evidence/wal-disk.txt
           python fixture/tools/test_large_star_runtime.py --binary evidence/ramsql \
-            --rows 100000000 --memory-budget 14347884288 --report evidence/typed-bank-100m-star.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          report = json.loads(Path("evidence/typed-bank-100m-star.json").read_text(encoding="utf-8"))
-          ordered_range = report["ordered_range"]
-          if ordered_range["status"] != "passed":
-              raise SystemExit(f"Ordered range correctness failed: {ordered_range}")
-          print(f"Ordered range correctness passed with {len(ordered_range['rows'])} exact rows")
-          PY
+            --rows 262144 --memory-budget 14347884288 --require-ordered-range \
+            --wal "$RUNNER_TEMP/durable-star-smoke.wal" --report evidence/durable-smoke.json
+      - name: Qualify 100M facts and recover from synchronous WAL
+        run: |
+          set -euo pipefail
+          python fixture/tools/test_large_star_runtime.py --binary evidence/ramsql \
+            --rows 100000000 --memory-budget 14347884288 --require-ordered-range \
+            --wal "$RUNNER_TEMP/durable-star-100m.wal" --report evidence/typed-bank-100m-star.json
           sha256sum --check --strict evidence/SHA256SUMS
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: typed-bank-100m-star-evidence
+          name: typed-bank-durable-100m-evidence
           path: evidence/
           if-no-files-found: warn
