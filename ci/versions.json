@@ -1,8 +1,8 @@
 {
   "ramsql": {
-    "revision": "006874fb8b48c07488ab66cae1148065457ae822",
-    "url": "https://github.com/SB0LTD/ramsql/archive/006874fb8b48c07488ab66cae1148065457ae822.tar.gz",
-    "sha256": "32d0aae0709072b940d914c5d0afb461b3e356ad73fd69ccc0f85b66e1925ac9",
+    "revision": "5cebf21b1ca600a034c181a6cf2936398b58a5b4",
+    "url": "https://github.com/SB0LTD/ramsql/archive/5cebf21b1ca600a034c181a6cf2936398b58a5b4.tar.gz",
+    "sha256": "7c671a836b02a284fe4adc108c947e5ecf09bb48ed1e5013ed40b1f05468cd95",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -45,12 +45,12 @@
         0
       ]
     },
-    "dependency_manifest_sha256": "f1de2130579c55c917da9878585ca48f5a6093ce8ffd76260ef27579cf5ad5ed"
+    "dependency_manifest_sha256": "f092b08b378cabaa69c45a1aee21ba26123cdbb50319e61c7e1f08337868d8a1"
   },
   "ramsql_baseline": {
-    "revision": "bbaca185a88e250f8be7d3b97bdbbc87ab499032",
-    "url": "https://github.com/SB0LTD/ramsql/archive/bbaca185a88e250f8be7d3b97bdbbc87ab499032.tar.gz",
-    "sha256": "824af18c2d13ba85b21215ec5ca7f98c54e847704a97136341b1211d813a55b6",
+    "revision": "9799cc836c42b2184fb4fb388f495af0b30d15b2",
+    "url": "https://github.com/SB0LTD/ramsql/archive/9799cc836c42b2184fb4fb388f495af0b30d15b2.tar.gz",
+    "sha256": "6e504de21ffa282b86f406cd6179c8e82b56e7e38a1fbbb8c96a9e19cbf4d764",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -93,7 +93,7 @@
         0
       ]
     },
-    "dependency_manifest_sha256": "aa8a7ba45b96a72f2ced8d223a4e87e670385d530240526dc770ba62657247dc"
+    "dependency_manifest_sha256": "6b9c5cac796aaf38cd8db56fb607f20fe79de68ab9cddb23e512292ed7bfb4e6"
   },
   "sig": {
     "url": "https://github.com/SB0LTD/sig/releases/download/sig-0.6.5-zig0.17.0.3c72687/sig-0.6.5-zig0.17.0.3c72687-x86_64-linux.tar.xz",
@@ -118,7 +118,7 @@
   "paired_suite": "size-scaling",
   "paired_pk_shards": true,
   "paired_dependency_manifests": {
-    "baseline": "aa8a7ba45b96a72f2ced8d223a4e87e670385d530240526dc770ba62657247dc",
-    "candidate": "f1de2130579c55c917da9878585ca48f5a6093ce8ffd76260ef27579cf5ad5ed"
+    "baseline": "6b9c5cac796aaf38cd8db56fb607f20fe79de68ab9cddb23e512292ed7bfb4e6",
+    "candidate": "f092b08b378cabaa69c45a1aee21ba26123cdbb50319e61c7e1f08337868d8a1"
   }
 }
