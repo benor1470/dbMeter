@@ -63,13 +63,16 @@ def profile(campaign, child, client_count, perf):
     return run
 
 
-def main(perf):
+def main(perf, capture=profile, prepare=None,
+         scope='Original prepared JDBC read under RAMSQL CPU sampling'):
     pg_driver = download(VERSIONS['postgres_jdbc'], ROOT / 'drivers/postgresql-42.7.4.jar')
     (RUNTIME / 'dependencies.json').write_text(json.dumps({'postgres_jdbc_sha256': digest(pg_driver)}))
     campaign = Campaign('size-scaling', 'qualification', 1000000)
     campaign.report.update(diagnostic_only=True, merge_allowed=False, profiling_tool=Path(perf).name,
-                           scope='Original prepared JDBC read under RAMSQL CPU sampling')
+                           scope=scope)
     campaign.save()
+    if prepare is not None:
+        prepare(campaign, perf)
     generator = campaign.folder / 'gen.py'
     if campaign.command('original-generator', [sys.executable, '-I', str(generator)]):
         raise RuntimeError('Original size-scaling generator failed')
@@ -90,7 +93,7 @@ def main(perf):
             raise RuntimeError('Original size-scaling correctness checks failed')
         check_xml(checks, required)
         for client_count in (1, 8):
-            campaign.report['runs'].append(profile(campaign, child, client_count, perf))
+            campaign.report['runs'].append(capture(campaign, child, client_count, perf))
             campaign.save()
     campaign.report['completed'] = True
     campaign.save()
