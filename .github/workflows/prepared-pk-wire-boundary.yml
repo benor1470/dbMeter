@@ -1,0 +1,41 @@
+name: Prepared JDBC and server wire boundary
+
+on:
+  push:
+    branches: [ci/prepared-pk-wire-boundary-20261118]
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build the exact benchmark executable and unmodified JDBC driver harness
+        run: |
+          python ci/bootstrap.py ramsql
+          mv .ci-runtime/ramsql .ci-runtime/ramsql-provenance.json "$RUNNER_TEMP"/
+          mkdir .ci-runtime/downloaded-ramsql
+          mv "$RUNNER_TEMP/ramsql" "$RUNNER_TEMP/ramsql-provenance.json" .ci-runtime/downloaded-ramsql/
+          sh build.sh
+      - name: Attribute the original request cycle to JDBC and server intervals
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y tcpdump
+          python ci/profile_pk_wire_boundary.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prepared-pk-wire-boundary
+          path: reports/live/size-scaling-1000000/
+          if-no-files-found: error

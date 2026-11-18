@@ -227,7 +227,8 @@ class Campaign:
         if engine == 'postgres':
             if not self.pg_created:
                 subprocess.run(['docker', 'create', '--name', self.container,
-                                '--network', 'host', '-e', 'POSTGRES_HOST_AUTH_METHOD=trust',
+                                '--network', 'host', *getattr(self, 'postgres_cpu_flags', ()),
+                                '-e', 'POSTGRES_HOST_AUTH_METHOD=trust',
                                 '-e', f'PGPORT={self.port[engine]}', VERSIONS['postgres_image'],
                                 'postgres', '-c', f'port={self.port[engine]}', '-c', 'listen_addresses=127.0.0.1'],
                                check=True, stdout=subprocess.DEVNULL)
@@ -297,6 +298,8 @@ class Campaign:
                 (self.work / 'irdb-data').mkdir(exist_ok=True)
                 (self.work / 'irdb-logs').mkdir(exist_ok=True)
                 argv = ['dotnet', str(server), str(ini)]
+            if engine == 'ramsql' and getattr(self, 'ramsql_cpu_mask', ''):
+                argv = ['taskset', '-c', self.ramsql_cpu_mask, *argv]
             log = (self.out / (engine + '-server.log')).open('ab')
             child = subprocess.Popen(argv, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
             try:
