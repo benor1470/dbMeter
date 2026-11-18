@@ -14,7 +14,7 @@ from runner import host_snapshot
 ORDER = (('baseline', 'candidate'), ('candidate', 'baseline'), ('baseline', 'candidate'))
 SUITE = VERSIONS.get('paired_suite', 'sales-subset')
 FOCUS = VERSIONS.get('paired_focus', 's3_top_products')
-TCP = VERSIONS.get('paired_tcp_completions', False)
+LOCALITY = VERSIONS.get('paired_linux_worker_locality', False)
 
 
 def paired_cases(focus, suite='sales-subset'):
@@ -71,23 +71,30 @@ def validate_sources(proofs):
         raise ValueError('Paired dependency manifests differ')
 
 
-def validate_tcp_pairs(campaign, arguments):
+def validate_locality_pairs(campaign, arguments):
     proofs = campaign['paired_sources']
     if proofs['baseline']['binary_sha256'] != proofs['candidate']['binary_sha256']:
-        raise ValueError('Completion experiment needs the same binary')
+        raise ValueError('Worker locality experiment needs the same binary')
     control = arguments['baseline/1']
     for key, actual in arguments.items():
         candidate = key.startswith('candidate/')
-        expected = [*control, '--tcp-completions'] if candidate else control
-        if '--tcp-completions' in control or actual != expected:
-            raise ValueError('Completion experiment changed arguments beyond the single transport flag')
+        expected = [*control, '--linux-worker-locality'] if candidate else control
+        if '--linux-worker-locality' in control or actual != expected:
+            raise ValueError('Worker locality experiment changed arguments beyond the single worker-locality flag')
         facts = campaign['paired_admission'][key]
-        if facts.get('tcp_completions_probe') is not candidate or facts.get('startup_fits') is not True:
-            raise ValueError('Expected transport was not admitted')
-        if facts.get('tcp_live_rings') != (int(actual[actual.index('--workers') + 1]) if candidate else 0):
-            raise ValueError('Live completion ring count differs')
-        if facts.get('read_cache_bytes') != 0:
-            raise ValueError('Completion comparison requires cache disabled')
+        if facts.get('startup_fits') is not True:
+            raise ValueError('Expected worker placement was not admitted')
+        workers = int(actual[actual.index('--workers') + 1])
+        affinity = facts.get('live_worker_affinity', {})
+        allowed = affinity.get('process', [])
+        masks = affinity.get('workers', [])
+        if not allowed or len(masks) != workers:
+            raise ValueError('Missing live worker affinity proof')
+        expected = all(len(mask) == 1 and mask[0] in allowed for mask in masks)
+        if candidate and (not expected or len({mask[0] for mask in masks}) != workers):
+            raise ValueError('Candidate does not use distinct allowed worker CPUs')
+        if not candidate and any(mask != allowed for mask in masks):
+            raise ValueError('Control worker unexpectedly uses restricted affinity')
 
 
 def summarize_pairs(folder, campaign):
@@ -109,8 +116,8 @@ def summarize_pairs(folder, campaign):
             raise ValueError('Missing paired server capacity arguments')
         control = arguments['baseline/1']
         validate_size_pair_arguments(control)
-        if VERSIONS.get("paired_tcp_completions", False):
-            validate_tcp_pairs(campaign, arguments)
+        if VERSIONS.get("paired_linux_worker_locality", False):
+            validate_locality_pairs(campaign, arguments)
         elif any(actual != control for actual in arguments.values()):
             raise ValueError('Paired server capacity arguments differ')
     scheduled = [(pair, mode, case) for pair, order in enumerate(ORDER, 1) for mode in order for case in CASES]
@@ -152,7 +159,7 @@ class PairedCampaign(Campaign):
         super().__init__(SUITE, 'qualification')
         self.candidate_binary = self.binary
         self.cache_budgets = paired_cache_budgets(VERSIONS)
-        if self.cache_budgets is None and not TCP:
+        if self.cache_budgets is None and not LOCALITY:
             self.baseline_binary = RUNTIME / 'downloaded-baseline/ramsql/bin/ramsql'
             self.baseline_binary.chmod(0o755)
             baseline = json.loads((RUNTIME / 'downloaded-baseline/ramsql-provenance.json').read_text())
@@ -164,6 +171,7 @@ class PairedCampaign(Campaign):
         self.report.update(diagnostic_only=True, merge_allowed=False,
             scope='Paired RAMSQL control/candidate; not reference-engine or full-suite qualification',
             expected_cases=list(CASES), paired_order=ORDER, paired_focus=FOCUS,
+            original_worker_locality_experiment=LOCALITY,
             paired_sources=dict(baseline=baseline, candidate=self.ram_provenance), paired_admission={},
             paired_server_arguments={},
             paired_read_cache_bytes=self.cache_budgets, paired_read_cache={})
@@ -185,16 +193,17 @@ class PairedCampaign(Campaign):
             for mode in order:
                 self.binary = self.candidate_binary if mode == 'candidate' else self.baseline_binary
                 self.ramsql_source = self.report['paired_sources'][mode]['source']
-                self.ramsql_read_cache_bytes = self.cache_budgets[mode] if self.cache_budgets else 0
-                self.ramsql_tcp_completions = TCP and mode == 'candidate'
+                self.ramsql_read_cache_bytes = (self.cache_budgets[mode] if self.cache_budgets else
+                                               self.ramsql_source.get('read_cache_bytes', 0))
+                self.ramsql_worker_locality = LOCALITY and mode == 'candidate'
                 with self.running('ramsql'):
                     self.report['paired_admission'][f'{mode}/{pair}'] = self.report['ramsql_machine_capacity']
                     self.report['paired_server_arguments'][f'{mode}/{pair}'] = arguments = self.report['ramsql_server_arguments']
                     if SUITE == 'size-scaling':
                         validate_size_pair_arguments(arguments)
                         expected = self.report['paired_server_arguments']['baseline/1']
-                        if self.ramsql_tcp_completions:
-                            expected = [*expected, '--tcp-completions']
+                        if self.ramsql_worker_locality:
+                            expected = [*expected, '--linux-worker-locality']
                         if arguments != expected:
                             raise RuntimeError('Paired server capacity arguments differ')
                     self.report['paired_read_cache'][f'{mode}/{pair}'] = self.report['ramsql_read_cache']

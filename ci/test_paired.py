@@ -24,7 +24,7 @@ class PairedContracts(unittest.TestCase):
         self.enterContext(patch.dict(VERSIONS))
         VERSIONS.pop('paired_dependency_manifests', None)
         VERSIONS.pop('paired_read_cache_bytes', None)
-        VERSIONS.pop('paired_tcp_completions', None)
+        VERSIONS.pop('paired_linux_worker_locality', None)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.folder = Path(self.directory.name)
@@ -104,22 +104,24 @@ class PairedContracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'multi-reactor'):
             summarize_pairs(self.folder, self.campaign)
 
-    def test_tcp_pairs_require_same_binary_and_actual_transport(self):
-        VERSIONS['paired_tcp_completions'] = True
+    def test_worker_placement_requires_same_binary_and_actual_affinity(self):
+        VERSIONS['paired_linux_worker_locality'] = True
         self.campaign['paired_sources']['candidate']['binary_sha256'] = 'a' * 64
         self.campaign['paired_admission'] = {}
         for key, args in self.campaign['paired_server_arguments'].items():
             candidate = key.startswith('candidate/')
             if candidate:
-                args.append('--tcp-completions')
+                args.append('--linux-worker-locality')
+            allowed = list(range(8))
+            masks = [[cpu] for cpu in allowed] if candidate else [allowed] * len(allowed)
             self.campaign['paired_admission'][key] = dict(
-                tcp_completions_probe=candidate, tcp_live_rings=8 if candidate else 0,
+                live_worker_affinity={'process': allowed, 'workers': masks},
                 startup_fits=True, read_cache_bytes=0)
         for run in self.campaign['runs']:
             run['binary_sha256'] = 'a' * 64
         self.assertEqual(len(summarize_pairs(self.folder, self.campaign)['rows']), len(CASES))
-        self.campaign['paired_admission']['candidate/2']['tcp_live_rings'] = 0
-        with self.assertRaisesRegex(ValueError, 'ring count'):
+        self.campaign['paired_admission']['candidate/2']['live_worker_affinity']['workers'][0] = [8]
+        with self.assertRaisesRegex(ValueError, 'distinct allowed worker CPUs'):
             summarize_pairs(self.folder, self.campaign)
 
     def test_missing_trial_rejected(self):
