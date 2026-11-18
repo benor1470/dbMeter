@@ -1,8 +1,8 @@
 {
   "ramsql": {
-    "revision": "dc6d8dbe991f7e5d7cb021d59466c06e372083ec",
-    "url": "https://github.com/SB0LTD/ramsql/archive/dc6d8dbe991f7e5d7cb021d59466c06e372083ec.tar.gz",
-    "sha256": "94dd6a4111271cc388f2b3cde4c302d459c2a9520c6c59eef13804ecf56a4da2",
+    "revision": "1b489cb8a0d194519df4b17d957f16518cd557cd",
+    "url": "https://github.com/SB0LTD/ramsql/archive/1b489cb8a0d194519df4b17d957f16518cd557cd.tar.gz",
+    "sha256": "4445fd63ba4ef59b0f062d7e9dd1a1eb123dcdba93ee4f718bfa8cc6d8b97a8a",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -11,9 +11,9 @@
     }
   },
   "ramsql_baseline": {
-    "revision": "da0b68f1cf3cd6f64d2de2464f9d645b68fb1c31",
-    "url": "https://github.com/SB0LTD/ramsql/archive/da0b68f1cf3cd6f64d2de2464f9d645b68fb1c31.tar.gz",
-    "sha256": "bc3b59fbd8a4b835b99635d8f049c09f4f80a94d02ff2b063841701d51c68f0a",
+    "revision": "bbaca185a88e250f8be7d3b97bdbbc87ab499032",
+    "url": "https://github.com/SB0LTD/ramsql/archive/bbaca185a88e250f8be7d3b97bdbbc87ab499032.tar.gz",
+    "sha256": "824af18c2d13ba85b21215ec5ca7f98c54e847704a97136341b1211d813a55b6",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -26,7 +26,7 @@
     "sha256": "179094228e2e6b0db3a5a1e01a8a57e8e91db6aa3b5ca80094ca22d870cc373a"
   },
   "postgres_jdbc": {
-    "url": "https://repo.maven.apache.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar",
+    "url": "https://jdbc.postgresql.org/download/postgresql-42.7.4.jar",
     "sha256": "188976721ead8e8627eb6d8389d500dccc0c9bebd885268a3047180274a6031e"
   },
   "fastutil": {
@@ -43,7 +43,7 @@
   "paired_focus": "prepared-pk",
   "paired_suite": "size-scaling",
   "paired_dependency_manifests": {
-    "baseline": "e30635b449fbd55558546441824c62f8688462d322463dd5527c8428d5d43de4",
-    "candidate": "3bbe8176ea1a2c11103e612e7cfde7ef554be815c6952af7046c7e19912f8563"
+    "baseline": "aa8a7ba45b96a72f2ced8d223a4e87e670385d530240526dc770ba62657247dc",
+    "candidate": "445cd8d34d8964c79328b8b4d3b9908e6855749619f33ba755f0fd8f6096043b"
   }
 }
