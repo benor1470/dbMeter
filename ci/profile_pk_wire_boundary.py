@@ -23,7 +23,10 @@ def summarize_wire(path, port):
     flows = defaultdict(list)
     with path.open() as packets:
         for line in packets:
-            match = PACKET.fullmatch(line.strip())
+            packet = line.strip()
+            if not packet:
+                continue
+            match = PACKET.fullmatch(packet)
             if not match:
                 raise ValueError(f"Unexpected tcpdump format {line[:100]!r}")
             seconds, micros, source, target, length = map(int, match.groups())
@@ -60,7 +63,12 @@ def summarize_wire(path, port):
                 samples[key].append(value)
     if wire_pairs < 10000:
         raise ValueError(f"Only {wire_pairs} complete request/reply/next-request turns")
-    return {"flows":len(flows), "turns":wire_pairs, "metrics":{
+    if len(flows) != 1:
+        raise ValueError("The original one-client measurement had multiple TCP flows")
+    bursts = next(iter(flows.values()))
+    span_us = bursts[-1][2] - bursts[0][1]
+    return {"flows":len(flows), "turns":wire_pairs, "span_us":span_us,
+            "turns_per_second":wire_pairs * 1000000 / span_us, "metrics":{
         k: {"median":statistics.median(values), "p95":sorted(values)[(len(values) * 95) // 100]}
         for k, values in samples.items()}}
 
@@ -89,7 +97,8 @@ def profile(campaign, engine, server_pid, affinity):
     args = ['taskset', '-c', affinity['jdbc'], *argv]
     before_host = host_snapshot()
     trace_path = campaign.out / f'{name}-wire.txt'
-    capture_flags = 'tcp port ' + str(campaign.port[engine]) +         ' and (ip[2:2] - ((ip[0] & 15) << 2) - ((tcp[12] & 240) >> 2)) != 0'
+    capture_flags = (f'tcp port {campaign.port[engine]} '
+                     'and (ip[2:2] - ((ip[0] & 15) << 2) - ((tcp[12] & 240) >> 2)) != 0')
     with (campaign.out / f'{name}.log').open('wb') as load_log:
         with subprocess.Popen(args, cwd=ROOT, stdout=load_log, stderr=subprocess.STDOUT) as load:
             try:
