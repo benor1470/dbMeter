@@ -1,8 +1,8 @@
 {
   "ramsql": {
-    "revision": "7538e50de0d4b45bd16adb887b1040c08acd6bde",
-    "url": "https://github.com/SB0LTD/ramsql/archive/7538e50de0d4b45bd16adb887b1040c08acd6bde.tar.gz",
-    "sha256": "f81ef38db066056816eefb9834b12584ae37e263e5250f1309a96ec33ca44c2b",
+    "revision": "aa159b0b22dbcee380dd6f4428c05bc4106c1e49",
+    "url": "https://github.com/SB0LTD/ramsql/archive/aa159b0b22dbcee380dd6f4428c05bc4106c1e49.tar.gz",
+    "sha256": "8d1779e8fedb3bace04eced7929b8622e3a62b3ac0bda85bf974244975803b32",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -11,9 +11,9 @@
     }
   },
   "ramsql_baseline": {
-    "revision": "7538e50de0d4b45bd16adb887b1040c08acd6bde",
-    "url": "https://github.com/SB0LTD/ramsql/archive/7538e50de0d4b45bd16adb887b1040c08acd6bde.tar.gz",
-    "sha256": "f81ef38db066056816eefb9834b12584ae37e263e5250f1309a96ec33ca44c2b",
+    "revision": "aa159b0b22dbcee380dd6f4428c05bc4106c1e49",
+    "url": "https://github.com/SB0LTD/ramsql/archive/aa159b0b22dbcee380dd6f4428c05bc4106c1e49.tar.gz",
+    "sha256": "8d1779e8fedb3bace04eced7929b8622e3a62b3ac0bda85bf974244975803b32",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -42,5 +42,6 @@
   "postgres_image": "postgres:18.3-bookworm@sha256:80630f83606d8db77d30b3851b16a9f78be2d0d4dda6f7b82a1fdca5ebe3acba",
   "paired_focus": "prepared-pk",
   "paired_suite": "size-scaling",
-  "paired_tcp_completions": true
+  "paired_tcp_completions": true,
+  "paired_pk_shards": true
 }

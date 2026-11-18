@@ -1,5 +1,6 @@
 """Same-VM RAMSQL control/candidate diagnostic; never all-engine qualification."""
 import json
+import os
 import re
 import statistics
 import sys
@@ -26,7 +27,11 @@ def paired_cases(focus, suite='sales-subset'):
     return ('mixed/1', 'mixed/8', focus + '/1', focus + '/8')
 
 
-CASES = paired_cases(FOCUS, SUITE)
+ORIGINAL_CASES = paired_cases(FOCUS, SUITE)
+SHARD = os.environ.get('PAIRED_CASE', '')
+if SHARD and (not VERSIONS.get('paired_pk_shards') or SHARD not in ORIGINAL_CASES):
+    raise ValueError('Invalid original PK shard')
+CASES = (SHARD,) if SHARD else ORIGINAL_CASES
 REQUIRED_CHECKS = ({f's{size}_{kind}' for size in SIZES for kind in ('a_pk', 'b_filter', 'c_topn', 'd_last')}
                    if SUITE == 'size-scaling' else {'a_totals'} | MIXED[SUITE])
 

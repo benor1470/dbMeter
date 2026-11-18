@@ -148,11 +148,13 @@ jobs:
         run: python ci/evidence.py suite --suite '${{ matrix.suite }}'
       - name: Same-runner baseline/candidate AB BA AB comparison
         if: matrix.kind == 'paired'
+        env:
+          PAIRED_CASE: ${{ matrix.case }}
         run: python ci/paired_benchmark.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ matrix.kind }}-${{ matrix.suite }}
+          name: ${{ matrix.kind }}-${{ matrix.suite }}${{ matrix.artifact_suffix }}
           path: reports/live/${{ matrix.suite }}/
           if-no-files-found: error
           retention-days: 30
