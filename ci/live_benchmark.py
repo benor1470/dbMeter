@@ -165,6 +165,7 @@ class Campaign:
         if digest(self.binary) != self.ram_provenance['binary_sha256']:
             raise ValueError('Downloaded RAMSQL artifact changed')
         self.ramsql_read_cache_bytes = 0
+        self.ramsql_tcp_completions = False
         self.ramsql_source = self.ram_provenance['source']
         self.folder = ROOT / 'examples' / {'size-scaling': 'size-scaling', 'sales-subset': 'sales-agg-subset', 'sales-full': 'sales-agg'}[suite]
         self.configs = {}
@@ -264,6 +265,9 @@ class Campaign:
                     self.report['ramsql_read_cache'] = {key: planned[key] for key in ('read_cache_bytes', 'read_cache_entries', 'read_cache_rows_per_entry')}
                 else:
                     self.report['ramsql_read_cache'] = {'read_cache_bytes': 0, 'read_cache_entries': 0}
+                if self.ramsql_tcp_completions:
+                    argv.append('--tcp-completions')
+                    probe.append('--tcp-completions')
                 self.report['ramsql_server_arguments'] = argv[1:]
                 self.report['ramsql_machine_capacity'] = json.loads(subprocess.check_output(probe, text=True, timeout=30))
                 self.save()
@@ -280,6 +284,17 @@ class Campaign:
             child = subprocess.Popen(argv, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
             try:
                 wait_port(self.port[engine], child)
+                if engine == 'ramsql' and VERSIONS.get('paired_tcp_completions', False):
+                    rings = 0
+                    for descriptor in Path(f'/proc/{child.pid}/fd').iterdir():
+                        try:
+                            rings += os.readlink(descriptor) == 'anon_inode:[io_uring]'
+                        except FileNotFoundError:
+                            continue
+                    expected = int(argv[argv.index('--workers') + 1]) if self.ramsql_tcp_completions else 0
+                    if rings != expected:
+                        raise RuntimeError(f'Expected {expected} live completion rings, found {rings}')
+                    self.report['ramsql_machine_capacity']['tcp_live_rings'] = rings
                 yield
             finally:
                 if child.poll() is None:
