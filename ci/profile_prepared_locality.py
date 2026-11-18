@@ -25,6 +25,7 @@ TRACE_EVENTS = ('sched:sched_waking', 'sched:sched_switch', 'sched:sched_migrate
                 'syscalls:sys_exit_sendto', 'syscalls:sys_exit_recvfrom')
 LINE = re.compile(r'^\s*(\d+)\s+\[(\d+)\]\s+(\d+\.\d+):\s+([\w:]+):\s+(.*)$')
 FIELD = re.compile(r'\b(pid|target_cpu|prev_pid|next_pid|prev_state|orig_cpu|dest_cpu)=(\S+)')
+FORMATTED_SWITCH = re.compile(r'^.*?:(\d+)\s+\[\d+\]\s+(\S+)\s+==>\s+.*?:(\d+)\s+\[\d+\]\s*$')
 TCP_STAT = re.compile(r'\b(data_segs_in|data_segs_out|segs_in|segs_out|bytes_sent|bytes_received):(\d+)')
 
 
@@ -213,9 +214,17 @@ def summarize(lines, roles, cores):
                 pending[target] = (roles.get(tid, 'external_or_kernel'), cpu, now)
                 counters[f'{roles[target]}_wakes'] += 1
         elif event == 'sched:sched_switch':
-            previous, following = int(fields['prev_pid']), int(fields['next_pid'])
+            if 'prev_pid' in fields:
+                previous, state, following = fields['prev_pid'], fields['prev_state'], fields['next_pid']
+            else:
+                # The hosted libtraceevent plugin renders process:pid [priority] instead.
+                formatted = FORMATTED_SWITCH.fullmatch(payload)
+                if formatted is None:
+                    raise RuntimeError('Unknown perf sched_switch format')
+                previous, state, following = formatted.groups()
+            previous, following = int(previous), int(following)
             if previous in roles:
-                change = 'runnable' if fields['prev_state'].startswith('R') else 'blocked'
+                change = 'runnable' if state.startswith('R') else 'blocked'
                 runnable_by_role[roles[previous]][change] += 1
             if following in roles:
                 counters[f'{roles[following]}_switches_in'] += 1
@@ -315,7 +324,8 @@ def capture(campaign, server, clients, perf):
             run['trace']['tcp_info_deltas'] = socket_deltas(before, after, port, clients)
             run['trace']['tcp_info_window_unix_ns'] = [wall_start, wall_end]
             normalize_tcp(run['trace'], destination / 'local.json', wall_start, wall_end)
-        except Exception:
+        except Exception as error:
+            run['diagnostic_error'] = str(error)
             campaign.report['runs'].append(run)
             campaign.save()
             raise
