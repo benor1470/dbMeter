@@ -301,7 +301,7 @@ class Campaign:
             child = subprocess.Popen(argv, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
             try:
                 wait_port(self.port[engine], child)
-                yield
+                yield child
             finally:
                 if child.poll() is None:
                     child.terminate()
