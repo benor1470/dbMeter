@@ -77,11 +77,11 @@ def workflow_matrices(versions, paired_only=False):
         if suite == 'size-scaling' and not paired_only:
             raise ValueError('Size-scaling pairs require a paired-only dispatch')
         if versions.get('paired_pk_shards', False):
-            if not tcp or suite != 'size-scaling' or versions.get('paired_focus') != 'prepared-pk':
-                raise ValueError('PK shards require the original one-binary transport comparison')
+            if suite != 'size-scaling' or versions.get('paired_focus') != 'prepared-pk':
+                raise ValueError('PK shards require the original prepared PK comparison')
             for size in (100000, 1000000):
                 for clients in (1, 8):
-                    jobs.append(dict(suite=suite, kind='paired', single_binary=True,
+                    jobs.append(dict(suite=suite, kind='paired', single_binary=bool(cache or tcp),
                                      case=f's{size}_pk/{clients}', artifact_suffix=f'-s{size}_pk-{clients}'))
         else:
             jobs.append(dict(suite=suite, kind='paired'))

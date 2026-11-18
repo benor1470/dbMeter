@@ -128,6 +128,16 @@ class MatrixAndBankTests(unittest.TestCase):
         self.assertEqual(workflow_matrices(pins, paired_only=True),
                          ({'variant': ['ramsql', 'ramsql-baseline']}, {'include': [{'suite': 'size-scaling', 'kind': 'paired'}]}))
 
+    def test_two_source_pk_shards_each_require_both_binaries(self):
+        pins = {'ramsql': {'revision': 'candidate'}, 'ramsql_baseline': {'revision': 'baseline'},
+                'paired_suite': 'size-scaling', 'paired_focus': 'prepared-pk', 'paired_pk_shards': True}
+        builds, jobs = workflow_matrices(pins, paired_only=True)
+        self.assertEqual(builds['variant'], ['ramsql', 'ramsql-baseline'])
+        self.assertEqual(jobs['include'], [
+            dict(suite='size-scaling', kind='paired', single_binary=False, case=case,
+                 artifact_suffix='-' + case.replace('/', '-'))
+            for case in ('s100000_pk/1', 's100000_pk/8', 's1000000_pk/1', 's1000000_pk/8')])
+
     def test_cache_experiment_uses_one_image_and_cannot_enter_live_gate(self):
         source = {'revision': 'same'}
         versions = {'ramsql': source, 'ramsql_baseline': dict(source), 'paired_suite': 'sales-full',
