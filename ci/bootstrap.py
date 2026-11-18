@@ -57,13 +57,13 @@ def workflow_matrices(versions, paired_only=False):
     candidate = versions['ramsql']
     baseline = versions.get('ramsql_baseline')
     cache = paired_cache_budgets(versions)
-    locality = versions.get('paired_linux_worker_locality', False)
-    if type(locality) is not bool or (locality and (cache or not paired_only or 'release' in candidate or baseline != candidate)):
-        raise ValueError('Worker locality comparisons require a paired-only dispatch with one pinned source build')
+    direct_receive = versions.get('paired_linux_direct_receive', False)
+    if type(direct_receive) is not bool or (direct_receive and (cache or not paired_only or 'release' in candidate or baseline != candidate)):
+        raise ValueError('Direct receive comparisons require a paired-only dispatch with one pinned source build')
     if cache and (not paired_only or 'release' in candidate or baseline != candidate):
         raise ValueError('Cache experiments require a paired-only dispatch with one pinned source build')
-    paired = 'release' not in candidate and baseline is not None and (baseline != candidate or cache is not None or locality)
-    builds = {'variant': ['ramsql', 'ramsql-baseline'] if paired and cache is None and not locality else ['ramsql']}
+    paired = 'release' not in candidate and baseline is not None and (baseline != candidate or cache is not None or direct_receive)
+    builds = {'variant': ['ramsql', 'ramsql-baseline'] if paired and cache is None and not direct_receive else ['ramsql']}
     if paired_only and not paired:
         raise ValueError('Paired-only dispatch requires distinct pinned source builds')
     jobs = []
@@ -77,15 +77,15 @@ def workflow_matrices(versions, paired_only=False):
         if suite == 'size-scaling' and not paired_only:
             raise ValueError('Size-scaling pairs require a paired-only dispatch')
         if versions.get('paired_pk_shards', False):
-            if not locality or suite != 'size-scaling' or versions.get('paired_focus') != 'prepared-pk':
-                raise ValueError('PK shards require the original one-binary worker placement comparison')
+            if not direct_receive or suite != 'size-scaling' or versions.get('paired_focus') != 'prepared-pk':
+                raise ValueError('PK shards require the original one-binary direct receive comparison')
             for size in (100000, 1000000):
                 for clients in (1, 8):
                     jobs.append(dict(suite=suite, kind='paired', single_binary=True,
                                      case=f's{size}_pk/{clients}', artifact_suffix=f'-s{size}_pk-{clients}'))
         else:
             jobs.append(dict(suite=suite, kind='paired'))
-            if cache is not None or locality:
+            if cache is not None or direct_receive:
                 jobs[-1]['single_binary'] = True
     return builds, {'include': jobs}
 

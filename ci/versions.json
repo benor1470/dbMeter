@@ -1,8 +1,8 @@
 {
   "ramsql": {
-    "revision": "2548280ac20db1d83c6dc1749257aad3d34affa3",
-    "url": "https://github.com/SB0LTD/ramsql/archive/2548280ac20db1d83c6dc1749257aad3d34affa3.tar.gz",
-    "sha256": "57c1d975d7f1d9f4680ccc5afa03701de7c5f1816a96135860fe5ceb9784a6d5",
+    "revision": "b10a06ed3ca60ada6ca1b3ea869e3fed55613bd0",
+    "url": "https://github.com/SB0LTD/ramsql/archive/b10a06ed3ca60ada6ca1b3ea869e3fed55613bd0.tar.gz",
+    "sha256": "1e87f58a9a05b23ddc166d2dfd0ae5d9ae23a7ecaa85bd5238a5f4b38229873b",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -10,12 +10,12 @@
       "integral-version-banks": true
     },
     "read_cache_bytes": 268435456,
-    "dependency_manifest_sha256": "f62553cf407652fd8b58442788f1d90cf187e5cbfbb3ca0716275a6103bbc989"
+    "dependency_manifest_sha256": "f826e4188fac1d7c11e03c690c26ed4b5c7a18585be019156a3b2418e44672f3"
   },
   "ramsql_baseline": {
-    "revision": "2548280ac20db1d83c6dc1749257aad3d34affa3",
-    "url": "https://github.com/SB0LTD/ramsql/archive/2548280ac20db1d83c6dc1749257aad3d34affa3.tar.gz",
-    "sha256": "57c1d975d7f1d9f4680ccc5afa03701de7c5f1816a96135860fe5ceb9784a6d5",
+    "revision": "b10a06ed3ca60ada6ca1b3ea869e3fed55613bd0",
+    "url": "https://github.com/SB0LTD/ramsql/archive/b10a06ed3ca60ada6ca1b3ea869e3fed55613bd0.tar.gz",
+    "sha256": "1e87f58a9a05b23ddc166d2dfd0ae5d9ae23a7ecaa85bd5238a5f4b38229873b",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -23,7 +23,7 @@
       "integral-version-banks": true
     },
     "read_cache_bytes": 268435456,
-    "dependency_manifest_sha256": "f62553cf407652fd8b58442788f1d90cf187e5cbfbb3ca0716275a6103bbc989"
+    "dependency_manifest_sha256": "f826e4188fac1d7c11e03c690c26ed4b5c7a18585be019156a3b2418e44672f3"
   },
   "sig": {
     "url": "https://github.com/SB0LTD/sig/releases/download/sig-0.6.5-zig0.17.0.3c72687/sig-0.6.5-zig0.17.0.3c72687-x86_64-linux.tar.xz",
@@ -47,9 +47,9 @@
   "paired_focus": "prepared-pk",
   "paired_suite": "size-scaling",
   "paired_pk_shards": true,
-  "paired_linux_worker_locality": true,
+  "paired_linux_direct_receive": true,
   "paired_dependency_manifests": {
-    "baseline": "f62553cf407652fd8b58442788f1d90cf187e5cbfbb3ca0716275a6103bbc989",
-    "candidate": "f62553cf407652fd8b58442788f1d90cf187e5cbfbb3ca0716275a6103bbc989"
+    "baseline": "f826e4188fac1d7c11e03c690c26ed4b5c7a18585be019156a3b2418e44672f3",
+    "candidate": "f826e4188fac1d7c11e03c690c26ed4b5c7a18585be019156a3b2418e44672f3"
   }
 }

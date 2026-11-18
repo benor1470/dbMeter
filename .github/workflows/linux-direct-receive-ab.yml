@@ -1,0 +1,138 @@
+name: Original JDBC direct-receive A/B
+
+on:
+  push:
+    branches: [ci/linux-direct-receive-ab-20261118]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: direct-receive-dbmeter-${{ github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.event.action }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.matrices.outputs.build }}
+      benchmark: ${{ steps.matrices.outputs.benchmark }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Select the build and benchmark matrices
+        id: matrices
+        env:
+          PAIRED_ONLY: 'true'
+        run: python3 ci/bootstrap.py workflow-matrices >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.build) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test the evidence gate, including false-green cases
+        run: python -m unittest discover -s ci -p 'test_*.py' -v
+      - name: Install pinned RAMSQL benchmark binary
+        env:
+          BUILD_VARIANT: ${{ matrix.variant }}
+        run: python ci/bootstrap.py "$BUILD_VARIANT"
+      - name: Qualify the exact ReleaseFast candidate before timing
+        run: |
+          source_dir=$(find .ci-runtime/source -mindepth 1 -maxdepth 1 -type d)
+          mkdir -p reports/direct-receive-releasefast
+          python "$source_dir/tools/test_linux_direct_receive.py" \
+            --binary .ci-runtime/ramsql/bin/ramsql --report reports/direct-receive-releasefast/live.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: direct-receive-releasefast-correctness
+          path: reports/direct-receive-releasefast/
+          if-no-files-found: warn
+      - uses: actions/setup-java@v4
+        if: matrix.variant == 'ramsql'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install debugger for the separate JDBC path probe
+        if: matrix.variant == 'ramsql'
+        run: |
+          if ! command -v gdb; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends gdb
+          fi
+      - name: Verify exact prepared-PK wire and unchanged JDBC path
+        if: matrix.variant == 'ramsql'
+        run: python ci/prepared_pk_path_probe.py
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.variant == 'ramsql'
+        with:
+          name: prepared-pk-focused
+          path: reports/prepared-pk-focused/
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.variant }}-benchmark-binary
+          path: |
+            .ci-runtime/${{ matrix.variant == 'ramsql-baseline' && 'baseline-build/' || '' }}ramsql/bin/ramsql
+            .ci-runtime/${{ matrix.variant == 'ramsql-baseline' && 'baseline-build/' || '' }}ramsql-provenance.json
+          retention-days: 14
+
+  benchmark:
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.benchmark) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ramsql-benchmark-binary
+          path: .ci-runtime/downloaded-ramsql
+      - name: Restore the supplied private IRDB Java client
+        env:
+          IRDB_JDBC_PART_1: ${{ secrets.IRDB_JDBC_PART_1 }}
+          IRDB_JDBC_PART_2: ${{ secrets.IRDB_JDBC_PART_2 }}
+          IRDB_JDBC_PART_3: ${{ secrets.IRDB_JDBC_PART_3 }}
+          IRDB_JDBC_PART_4: ${{ secrets.IRDB_JDBC_PART_4 }}
+          IRDB_JDBC_PART_5: ${{ secrets.IRDB_JDBC_PART_5 }}
+        run: python ci/bootstrap.py dependencies
+      - name: Build the unchanged dbMeter and IRDB adapter
+        run: sh build.sh
+      - name: Same-runner baseline/candidate AB BA AB comparison
+        if: matrix.kind == 'paired'
+        env:
+          PAIRED_CASE: ${{ matrix.case }}
+        run: python ci/paired_benchmark.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.kind }}-${{ matrix.suite }}${{ matrix.artifact_suffix }}
+          path: reports/live/${{ matrix.suite }}/
+          if-no-files-found: error
+          retention-days: 30

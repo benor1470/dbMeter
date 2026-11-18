@@ -14,7 +14,7 @@ from runner import host_snapshot
 ORDER = (('baseline', 'candidate'), ('candidate', 'baseline'), ('baseline', 'candidate'))
 SUITE = VERSIONS.get('paired_suite', 'sales-subset')
 FOCUS = VERSIONS.get('paired_focus', 's3_top_products')
-LOCALITY = VERSIONS.get('paired_linux_worker_locality', False)
+DIRECT_RECEIVE = VERSIONS.get('paired_linux_direct_receive', False)
 
 
 def paired_cases(focus, suite='sales-subset'):
@@ -71,30 +71,21 @@ def validate_sources(proofs):
         raise ValueError('Paired dependency manifests differ')
 
 
-def validate_locality_pairs(campaign, arguments):
+def validate_direct_receive_pairs(campaign, arguments):
     proofs = campaign['paired_sources']
     if proofs['baseline']['binary_sha256'] != proofs['candidate']['binary_sha256']:
-        raise ValueError('Worker locality experiment needs the same binary')
+        raise ValueError('Direct receive experiment needs the same binary')
     control = arguments['baseline/1']
     for key, actual in arguments.items():
         candidate = key.startswith('candidate/')
-        expected = [*control, '--linux-worker-locality'] if candidate else control
-        if '--linux-worker-locality' in control or actual != expected:
-            raise ValueError('Worker locality experiment changed arguments beyond the single worker-locality flag')
+        expected = [*control, '--linux-direct-receive'] if candidate else control
+        if '--linux-direct-receive' in control or actual != expected:
+            raise ValueError('Direct receive experiment changed arguments beyond the single direct-receive flag')
         facts = campaign['paired_admission'][key]
         if facts.get('startup_fits') is not True:
-            raise ValueError('Expected worker placement was not admitted')
-        workers = int(actual[actual.index('--workers') + 1])
-        affinity = facts.get('live_worker_affinity', {})
-        allowed = affinity.get('process', [])
-        masks = affinity.get('workers', [])
-        if not allowed or len(masks) != workers:
-            raise ValueError('Missing live worker affinity proof')
-        expected = all(len(mask) == 1 and mask[0] in allowed for mask in masks)
-        if candidate and (not expected or len({mask[0] for mask in masks}) != workers):
-            raise ValueError('Candidate does not use distinct allowed worker CPUs')
-        if not candidate and any(mask != allowed for mask in masks):
-            raise ValueError('Control worker unexpectedly uses restricted affinity')
+            raise ValueError('Expected direct receive configuration was not admitted')
+        if facts.get('live_idle_socket_wait') != ('recvfrom' if candidate else 'poll'):
+            raise ValueError('Owned worker did not use the declared socket wait')
 
 
 def summarize_pairs(folder, campaign):
@@ -116,8 +107,8 @@ def summarize_pairs(folder, campaign):
             raise ValueError('Missing paired server capacity arguments')
         control = arguments['baseline/1']
         validate_size_pair_arguments(control)
-        if VERSIONS.get("paired_linux_worker_locality", False):
-            validate_locality_pairs(campaign, arguments)
+        if VERSIONS.get("paired_linux_direct_receive", False):
+            validate_direct_receive_pairs(campaign, arguments)
         elif any(actual != control for actual in arguments.values()):
             raise ValueError('Paired server capacity arguments differ')
     scheduled = [(pair, mode, case) for pair, order in enumerate(ORDER, 1) for mode in order for case in CASES]
@@ -159,7 +150,7 @@ class PairedCampaign(Campaign):
         super().__init__(SUITE, 'qualification')
         self.candidate_binary = self.binary
         self.cache_budgets = paired_cache_budgets(VERSIONS)
-        if self.cache_budgets is None and not LOCALITY:
+        if self.cache_budgets is None and not DIRECT_RECEIVE:
             self.baseline_binary = RUNTIME / 'downloaded-baseline/ramsql/bin/ramsql'
             self.baseline_binary.chmod(0o755)
             baseline = json.loads((RUNTIME / 'downloaded-baseline/ramsql-provenance.json').read_text())
@@ -171,7 +162,7 @@ class PairedCampaign(Campaign):
         self.report.update(diagnostic_only=True, merge_allowed=False,
             scope='Paired RAMSQL control/candidate; not reference-engine or full-suite qualification',
             expected_cases=list(CASES), paired_order=ORDER, paired_focus=FOCUS,
-            original_worker_locality_experiment=LOCALITY,
+            original_direct_receive_experiment=DIRECT_RECEIVE,
             paired_sources=dict(baseline=baseline, candidate=self.ram_provenance), paired_admission={},
             paired_server_arguments={},
             paired_read_cache_bytes=self.cache_budgets, paired_read_cache={})
@@ -195,15 +186,15 @@ class PairedCampaign(Campaign):
                 self.ramsql_source = self.report['paired_sources'][mode]['source']
                 self.ramsql_read_cache_bytes = (self.cache_budgets[mode] if self.cache_budgets else
                                                self.ramsql_source.get('read_cache_bytes', 0))
-                self.ramsql_worker_locality = LOCALITY and mode == 'candidate'
+                self.ramsql_direct_receive = DIRECT_RECEIVE and mode == 'candidate'
                 with self.running('ramsql'):
                     self.report['paired_admission'][f'{mode}/{pair}'] = self.report['ramsql_machine_capacity']
                     self.report['paired_server_arguments'][f'{mode}/{pair}'] = arguments = self.report['ramsql_server_arguments']
                     if SUITE == 'size-scaling':
                         validate_size_pair_arguments(arguments)
                         expected = self.report['paired_server_arguments']['baseline/1']
-                        if self.ramsql_worker_locality:
-                            expected = [*expected, '--linux-worker-locality']
+                        if self.ramsql_direct_receive:
+                            expected = [*expected, '--linux-direct-receive']
                         if arguments != expected:
                             raise RuntimeError('Paired server capacity arguments differ')
                     self.report['paired_read_cache'][f'{mode}/{pair}'] = self.report['ramsql_read_cache']

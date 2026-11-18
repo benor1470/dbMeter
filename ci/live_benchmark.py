@@ -9,6 +9,7 @@ from pathlib import Path
 import platform
 import re
 import socket
+import struct
 import subprocess
 import sys
 import time
@@ -141,25 +142,40 @@ def fresh_seed(original, target):
     return omitted
 
 
-def worker_affinity(child, count, pinned):
-    """Capture the owned process's actual worker CPU masks before JDBC starts."""
-    allowed = sorted(os.sched_getaffinity(child.pid))
-    tasks = Path(f'/proc/{child.pid}/task')
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and child.poll() is None:
+def idle_socket_wait(child, port, workers, direct):
+    """Prove the actual wait path using a temporary owned PostgreSQL session."""
+    expected = {'45'} if direct else {'7', '271'}  # Linux x86-64 recvfrom or poll/ppoll
+    payload = struct.pack('!I', 196608) + b'user\0postgres\0database\0ramsql\0\0'
+    with socket.create_connection(('127.0.0.1', port), timeout=5) as conn, conn.makefile('rb') as packets:
+        conn.sendall(struct.pack('!I', len(payload) + 4) + payload)
+        backend = None
+        for _ in range(64):
+            tag = packets.read(1)
+            if not tag:
+                break
+            size = struct.unpack('!I', packets.read(4))[0]
+            if not 4 <= size <= 65535:
+                raise RuntimeError('Invalid startup packet in owned receive proof')
+            body = packets.read(size - 4)
+            if tag == b'K':
+                backend = struct.unpack('!II', body)[0]
+            if tag == b'Z':
+                break
+        else:
+            raise RuntimeError('Owned session never reached ReadyForQuery')
+        if tag != b'Z' or backend is None:
+            raise RuntimeError('Owned session failed its startup')
+        tasks = Path(f'/proc/{child.pid}/task')
         tids = sorted(int(task.name) for task in tasks.iterdir() if int(task.name) != child.pid)
-        try:
-            masks = [sorted(os.sched_getaffinity(tid)) for tid in tids]
-        except ProcessLookupError:
-            continue
-        if len(masks) == count:
-            if pinned and (all(len(mask) == 1 and mask[0] in allowed for mask in masks) and
-                           len({mask[0] for mask in masks}) == count):
-                return {'process': allowed, 'workers': masks}
-            if not pinned and masks == [allowed] * count:
-                return {'process': allowed, 'workers': masks}
-        time.sleep(.01)
-    raise RuntimeError('The live server did not use the requested worker affinity')
+        if len(tids) != workers:
+            raise RuntimeError('Owned server did not start its declared reactor count')
+        reactor = (backend - 1) % workers
+        for _ in range(200):
+            fields = (tasks / str(tids[reactor]) / 'syscall').read_text().split()
+            if fields and fields[0] in expected:
+                return 'recvfrom' if direct else 'poll'
+            time.sleep(.002)
+        raise RuntimeError('Owned worker did not use the declared socket wait')
 
 
 class Campaign:
@@ -186,7 +202,7 @@ class Campaign:
         if digest(self.binary) != self.ram_provenance['binary_sha256']:
             raise ValueError('Downloaded RAMSQL artifact changed')
         self.ramsql_read_cache_bytes = 0
-        self.ramsql_worker_locality = False
+        self.ramsql_direct_receive = False
         self.ramsql_source = self.ram_provenance['source']
         self.folder = ROOT / 'examples' / {'size-scaling': 'size-scaling', 'sales-subset': 'sales-agg-subset', 'sales-full': 'sales-agg'}[suite]
         self.configs = {}
@@ -286,9 +302,9 @@ class Campaign:
                     self.report['ramsql_read_cache'] = {key: planned[key] for key in ('read_cache_bytes', 'read_cache_entries', 'read_cache_rows_per_entry')}
                 else:
                     self.report['ramsql_read_cache'] = {'read_cache_bytes': 0, 'read_cache_entries': 0}
-                if self.ramsql_worker_locality:
-                    argv.append('--linux-worker-locality')
-                    probe.append('--linux-worker-locality')
+                if self.ramsql_direct_receive:
+                    argv.append('--linux-direct-receive')
+                    probe.append('--linux-direct-receive')
                 self.report['ramsql_server_arguments'] = argv[1:]
                 self.report['ramsql_machine_capacity'] = json.loads(subprocess.check_output(probe, text=True, timeout=30))
                 self.save()
@@ -305,10 +321,10 @@ class Campaign:
             child = subprocess.Popen(argv, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
             try:
                 wait_port(self.port[engine], child)
-                if engine == 'ramsql' and VERSIONS.get('paired_linux_worker_locality', False):
+                if engine == 'ramsql' and VERSIONS.get('paired_linux_direct_receive', False):
                     workers = int(argv[argv.index('--workers') + 1])
-                    self.report['ramsql_machine_capacity']['live_worker_affinity'] = worker_affinity(
-                        child, workers, self.ramsql_worker_locality)
+                    self.report['ramsql_machine_capacity']['live_idle_socket_wait'] = idle_socket_wait(
+                        child, self.port[engine], workers, self.ramsql_direct_receive)
                 yield
             finally:
                 if child.poll() is None:
