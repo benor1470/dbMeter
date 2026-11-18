@@ -34,8 +34,8 @@ jobs:
           python -m unittest discover -s ci -p 'test_*.py'
           python ci/bootstrap.py ramsql
           python ci/bootstrap.py dependencies
-          mkdir -p .ci-runtime/downloaded-ramsql
-          cp .ci-runtime/ramsql/bin/ramsql .ci-runtime/ramsql-provenance.json .ci-runtime/downloaded-ramsql/
+          install -D .ci-runtime/ramsql/bin/ramsql .ci-runtime/downloaded-ramsql/ramsql/bin/ramsql
+          cp .ci-runtime/ramsql-provenance.json .ci-runtime/downloaded-ramsql/
           sh build.sh
       - name: Compare original 1M filter at one and eight clients
         run: python ci/compare_packed_filter.py
