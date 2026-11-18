@@ -32,7 +32,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y linux-tools-generic
-          perf_binary=$(find /usr/lib/linux-tools -type f -name perf | sort -V | tail -n 1)
+          packages=$(dpkg-query -W -f='${binary:Package}\n' 'linux-tools-[0-9]*')
+          perf_binary=$(dpkg-query -L $packages | awk '/^\/usr\/lib\/.*\/perf$/ {print}' | sort -V | tail -n 1)
           test -x "$perf_binary"
           "$perf_binary" version
           python ci/profile_prepared_pk.py "$perf_binary"
