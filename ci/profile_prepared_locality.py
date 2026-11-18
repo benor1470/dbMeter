@@ -244,8 +244,8 @@ def summarize(lines, roles, cores):
         raise RuntimeError(f'Perf dropped scheduler records ({lost} loss records)')
     if not all(counters[key] for key in ('server_switches_in', 'jdbc_switches_in', 'server_sendto', 'server_recvfrom')):
         raise RuntimeError('Required owned scheduler/TCP activity was absent or unparseable')
-    return {'event_window_ns': last_ns - first_ns, 'counts': counters, 'switch_out': runnable_by_role,
-            'wake_to_run': {group: distribution(values) for group, values in handoffs.items()}}
+    return {'event_window_ns': last_ns - first_ns, 'event_range_monotonic_ns': [first_ns, last_ns],
+            'counts': counters, 'switch_out': runnable_by_role, 'wake_to_run': {group: distribution(values) for group, values in handoffs.items()}}
 
 
 def decode(perf, trace, roles, cores):
@@ -262,23 +262,29 @@ def decode(perf, trace, roles, cores):
                 script.kill()
 
 
-def normalize_tcp(trace, report_path, start, end):
-    """The existing JDBC timeline has one-second buckets, so rates are estimates."""
-    scenario = json.loads(report_path.read_text())['scenarios']['s1000000_pk']
+def estimate_operations(timeline, start, end):
+    """Estimate queries in the interval from the original one-second JDBC buckets."""
     second_ns = 1_000_000_000
     operations = 0
-    for second, values in scenario['timeline'].items():
+    for second, values in timeline.items():
         left = int(second) * second_ns
         overlap = max(0, min(end, left + second_ns) - max(start, left))
         operations += (values[0] - values[1]) * overlap / second_ns
     if operations <= 0:
         raise RuntimeError('Owned trace window did not overlap the unchanged JDBC measurement')
+    return operations
+
+
+def normalize_tcp(trace, report_path):
+    timeline = json.loads(report_path.read_text())['scenarios']['s1000000_pk']['timeline']
+    tcp_ops = estimate_operations(timeline, *trace['tcp_info_window_unix_ns'])
+    perf_ops = estimate_operations(timeline, *trace['perf_window_unix_ns'])
     trace['normalization'] = dict(
-        method='overlap-weighted original one-second JDBC timeline buckets',
-        successful_jdbc_operations_estimate=operations,
-        server_successful_sends_per_operation_estimate=trace['counts']['server_sendto'] / operations,
+        method='overlap-weighted original one-second JDBC timeline buckets for each distinct sample interval',
+        estimated_tcp_window_operations=tcp_ops, estimated_perf_window_operations=perf_ops,
+        server_successful_sends_per_operation_estimate=trace['counts']['server_sendto'] / perf_ops,
         data_segments_per_operation_estimate={
-            role: {kind: counters[kind] / operations for kind in ('data_segs_in', 'data_segs_out')}
+            role: {kind: counters[kind] / tcp_ops for kind in ('data_segs_in', 'data_segs_out')}
             for role, counters in trace['tcp_info_deltas'].items()})
 
 
@@ -300,12 +306,16 @@ def capture(campaign, server, clients, perf):
                     raise RuntimeError('JDBC load ended before scheduler capture')
                 roles = thread_roles(server.pid, load.pid, clients)
                 server_ids = {tid for tid, role in roles.items() if role == 'server'}
+                snapshot_start = time.time_ns()
                 before = socket_counters(port)
-                wall_start = time.time_ns()
+                tcp_start = (snapshot_start + time.time_ns()) // 2
+                offset_before = time.time_ns() - time.monotonic_ns()
                 record_result = record(perf, trace, roles, server_ids, [sys.executable, str(Path(__file__).resolve()),
                                        '--receive-cpus', str(server.pid), str(port)])
-                wall_end = time.time_ns()
+                offset_after = time.time_ns() - time.monotonic_ns()
+                snapshot_end = time.time_ns()
                 after = socket_counters(port)
+                tcp_end = (snapshot_end + time.time_ns()) // 2
                 if load.poll() is not None:
                     raise RuntimeError('JDBC load ended during scheduler capture')
                 status = load.wait(timeout=90)
@@ -322,8 +332,13 @@ def capture(campaign, server, clients, perf):
             run['trace'] = decode(perf, trace, roles, campaign.report['linux_cpu_topology'])
             run['trace']['receive_cpu'] = json.loads(record_result.stdout)
             run['trace']['tcp_info_deltas'] = socket_deltas(before, after, port, clients)
-            run['trace']['tcp_info_window_unix_ns'] = [wall_start, wall_end]
-            normalize_tcp(run['trace'], destination / 'local.json', wall_start, wall_end)
+            run['trace']['tcp_info_window_unix_ns'] = [tcp_start, tcp_end]
+            if abs(offset_before - offset_after) > 5_000_000:
+                raise RuntimeError('Wall-clock offset changed during the monotonic scheduler sample')
+            clock_offset = (offset_before + offset_after) // 2
+            run['trace']['perf_window_unix_ns'] = [
+                ns + clock_offset for ns in run['trace']['event_range_monotonic_ns']]
+            normalize_tcp(run['trace'], destination / 'local.json')
         except Exception as error:
             run['diagnostic_error'] = str(error)
             campaign.report['runs'].append(run)
