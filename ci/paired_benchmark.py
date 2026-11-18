@@ -70,9 +70,40 @@ def validate_sources(proofs):
         raise ValueError('Paired dependency manifests differ')
 
 
+def equal_read_cache_bytes():
+    budget = VERSIONS.get('paired_equal_read_cache_bytes', 0)
+    if type(budget) is not int or budget < 0 or (budget and (SUITE != 'size-scaling' or paired_cache_budgets(VERSIONS))):
+        raise ValueError('Invalid equal cache diagnostic budget')
+    return budget
+
+
+def validate_equal_cache(campaign, budget):
+    for pair in (1, 2, 3):
+        for mode in ('baseline', 'candidate'):
+            key = f'{mode}/{pair}'
+            args = campaign['paired_server_arguments'][key]
+            if args.count('--read-cache-bytes') != 1 or args[args.index('--read-cache-bytes') + 1] != str(budget):
+                raise ValueError('Paired equal cache budget argument differs')
+            capacity = campaign['paired_admission'][key]
+            if (capacity['startup_fits'] is not True or
+                not 0 < capacity['read_cache_bytes'] <= capacity['read_cache_region_bytes'] <= budget or
+                capacity['read_cache_rows_per_entry'] != 128 or capacity['read_cache_entries'] <= 0):
+                raise ValueError('Paired equal cache budget was not admitted')
+            medium = capacity.get('read_cache_projected_bytes', 0)
+            if mode == 'baseline':
+                if medium:
+                    raise ValueError('Control unexpectedly includes the projected tier')
+            elif (not 0 < medium <= budget // 8 or capacity.get('read_cache_projected_entries', 0) < 8 or
+                  capacity.get('read_cache_projected_rows_per_entry') != 2048):
+                raise ValueError('Candidate projected cache tier did not fit')
+
+
 def summarize_pairs(folder, campaign):
     validate_sources(campaign['paired_sources'])
     cache = paired_cache_budgets(VERSIONS)
+    equal_cache = equal_read_cache_bytes()
+    if equal_cache:
+        validate_equal_cache(campaign, equal_cache)
     if cache and (campaign['paired_read_cache_bytes'] != cache or
                   campaign['paired_sources']['baseline']['binary_sha256'] != campaign['paired_sources']['candidate']['binary_sha256']):
         raise ValueError('Cache experiment must use the same pinned executable')
@@ -104,6 +135,8 @@ def summarize_pairs(folder, campaign):
             raise ValueError('Paired binary substitution')
         if cache and run.get('read_cache_bytes') != cache[run['variant']]:
             raise ValueError('Paired read cache budget differs from its pin')
+        if equal_cache and run.get('read_cache_bytes') != equal_cache:
+            raise ValueError('Paired equal cache trial budget differs')
         values[key] = read_run(folder, campaign, run)
     if values.keys() != expected:
         raise ValueError('Missing paired trial; partial runs are not scored')
@@ -130,6 +163,7 @@ class PairedCampaign(Campaign):
         super().__init__(SUITE, 'qualification')
         self.candidate_binary = self.binary
         self.cache_budgets = paired_cache_budgets(VERSIONS)
+        self.equal_cache = equal_read_cache_bytes()
         if self.cache_budgets is None:
             self.baseline_binary = RUNTIME / 'downloaded-baseline/ramsql/bin/ramsql'
             self.baseline_binary.chmod(0o755)
@@ -153,6 +187,7 @@ class PairedCampaign(Campaign):
         generator = 'gen_expected.py' if SUITE == 'sales-full' else 'gen.py'
         if self.command('original-generator', [sys.executable, '-I', str(self.folder / generator)]):
             raise RuntimeError('Original generator failed')
+        self.ramsql_read_cache_bytes = self.equal_cache
         self.setup()
         if not all(self.report['checks'].get(engine) for engine in ('ramsql', 'postgres', 'irdb')):
             self.report['gaps'].append('Paired timing requires all original checks to pass first')
@@ -164,7 +199,7 @@ class PairedCampaign(Campaign):
             for mode in order:
                 self.binary = self.candidate_binary if mode == 'candidate' else self.baseline_binary
                 self.ramsql_source = self.report['paired_sources'][mode]['source']
-                self.ramsql_read_cache_bytes = self.cache_budgets[mode] if self.cache_budgets else 0
+                self.ramsql_read_cache_bytes = self.cache_budgets[mode] if self.cache_budgets else self.equal_cache
                 with self.running('ramsql'):
                     self.report['paired_admission'][f'{mode}/{pair}'] = self.report['ramsql_machine_capacity']
                     self.report['paired_server_arguments'][f'{mode}/{pair}'] = arguments = self.report['ramsql_server_arguments']

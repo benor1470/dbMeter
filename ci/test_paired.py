@@ -24,6 +24,7 @@ class PairedContracts(unittest.TestCase):
         self.enterContext(patch.dict(VERSIONS))
         VERSIONS.pop('paired_dependency_manifests', None)
         VERSIONS.pop('paired_read_cache_bytes', None)
+        VERSIONS.pop('paired_equal_read_cache_bytes', None)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.folder = Path(self.directory.name)
@@ -104,6 +105,26 @@ class PairedContracts(unittest.TestCase):
         for case in self.campaign['paired_server_arguments']:
             self.campaign['paired_server_arguments'][case] = ['--workers', '1']
         with self.assertRaisesRegex(ValueError, 'multi-reactor'):
+            summarize_pairs(self.folder, self.campaign)
+
+    @unittest.skipUnless(SUITE == 'size-scaling', 'equal cache evidence')
+    def test_equal_cache_requires_a_verified_medium_tier(self):
+        budget = 256 * 1024 * 1024
+        VERSIONS['paired_equal_read_cache_bytes'] = budget
+        self.campaign['paired_admission'] = {}
+        for key, args in self.campaign['paired_server_arguments'].items():
+            args.extend(['--read-cache-bytes', str(budget)])
+            admitted = dict(startup_fits=True, read_cache_bytes=budget, read_cache_region_bytes=budget,
+                            read_cache_rows_per_entry=128, read_cache_entries=1)
+            if key.startswith('candidate/'):
+                admitted.update(read_cache_projected_bytes=1024, read_cache_projected_entries=8,
+                                read_cache_projected_rows_per_entry=2048)
+            self.campaign['paired_admission'][key] = admitted
+        for run in self.campaign['runs']:
+            run['read_cache_bytes'] = budget
+        self.assertEqual(len(summarize_pairs(self.folder, self.campaign)['rows']), len(CASES))
+        self.campaign['paired_admission']['candidate/1']['read_cache_projected_entries'] = 0
+        with self.assertRaisesRegex(ValueError, 'tier did not fit'):
             summarize_pairs(self.folder, self.campaign)
 
     def test_missing_trial_rejected(self):
