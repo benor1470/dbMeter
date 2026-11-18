@@ -1,18 +1,14 @@
-name: Durable two packed 100M table capacity
+name: Durable two packed 100M tables at 75 percent hash capacity
 
 on:
   push:
-    branches: [bench/ramsql-two-packed-tables-20261118]
+    branches: [bench/ramsql-two-packed-75-20261118]
   workflow_dispatch:
     inputs:
       runner:
         description: Linux x64 runner label with sufficient RAM and disk for the full lane
         type: string
         default: ubuntu-24.04
-      execute_full:
-        description: Actually load both 100M tables and recover their original synchronous WAL
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -23,10 +19,10 @@ jobs:
     runs-on: ${{ inputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 180
     env:
-      PRODUCT_REVISION: 6eba65f6ea9e99dd648a60a3fb4caa92b1fc9967
-      PRODUCT_ARCHIVE_SHA256: c030edeaca34fffd6b3cc612bbedae1d5970ac6bea6bf355cc970aeb1fe60536
-      ZPM_REVISION: 2350feeeb580d39623218a46d413b095e54bb615
-      ZPM_ARCHIVE_SHA256: 912ab1119d01b0df51221dc682995477a18f8b5e5db9d9c1a0fc7410ac0f050f
+      PRODUCT_REVISION: 14f4e529fc66a7da6f909b3e830d3c2be8378baa
+      PRODUCT_ARCHIVE_SHA256: 260e01a026ec01d3eb6189d0921f33f15cb892c458eb7b39f6ffbe2df59e1311
+      ZPM_REVISION: 6018420977445f6b14bb38165c075bc929aa8edc
+      ZPM_ARCHIVE_SHA256: fe62046de5b0da16400e9f41f69de3ae4b9f60797bb2018377f19b2fedba9d8a
       FIXTURE_REVISION: bfdf49a4bf017f65d63590eb4aed0309d0874dce
       FIXTURE_ARCHIVE_SHA256: 7112f0f063e02a5474f7e14aa4bb81ba354d60ef5ed5d27831c3def85b446c8b
     steps:
@@ -78,6 +74,22 @@ jobs:
           set -euo pipefail
           python product/tools/prepare_sig_runtime.py --installed-lib "$SIG_LIB_DIR" \
             --output "$RUNNER_TEMP/sig-runtime" --github-env "$GITHUB_ENV"
+      - name: Validate deliberate collisions and historical versions on exact ZPM
+        run: |
+          set -euo pipefail
+          zpm="$RUNNER_TEMP/zpm-contract"
+          mkdir "$zpm"
+          tar -xf "$RUNNER_TEMP/zpm.tar.gz" -C "$zpm" --strip-components=1
+          "$SIG" build-exe --Sig-lib-dir "$SIG_LIB_DIR" -OReleaseSafe --dep sql \
+            "-Mroot=$zpm/tests/test_sql_external_hash_load.sig" "-Msql=$zpm/src/core/sql.sig" \
+            "-femit-bin=$RUNNER_TEMP/sql-external-hash-load"
+          "$RUNNER_TEMP/sql-external-hash-load" 2>&1 | tee evidence/external-hash-contract.json
+          python - <<'PY'
+          import json
+          with open("evidence/external-hash-contract.json", encoding="utf-8") as handle:
+              r = json.load(handle)
+          assert r["suite"] == "sql_external_hash_load" and r["pass"] and r["assertions"] >= 50
+          PY
       - name: Build exact packed external storage variant
         run: |
           set -euo pipefail
@@ -109,43 +121,53 @@ jobs:
                         flags=["-Doptimize=ReleaseSafe", "-Dintegral-version-banks=true", "-Dcompact-version-stamps=true"])
           Path("evidence/provenance.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
           PY
-      - name: Plan 100M rows in each table without opening a database
+      - name: Compare 50 and 75 percent plans with 100M rows in each bank
+        id: capacity
         run: |
           set -euo pipefail
           df -B1 "$RUNNER_TEMP" | tee evidence/disk.txt
           python .github/fixtures/two_packed_tables.py --binary evidence/ramsql \
-            --wal "$RUNNER_TEMP/two-packed-full.wal" --report evidence/full-capacity.json
+            --wal "$RUNNER_TEMP/two-packed-full.wal" --report evidence/full-capacity-50.json
+          python .github/fixtures/two_packed_tables.py --binary evidence/ramsql --hash-load 75 \
+            --wal "$RUNNER_TEMP/two-packed-full.wal" --report evidence/full-capacity-75.json
           python - <<'PY'
           import json
           import os
-          with open("evidence/full-capacity.json", encoding="utf-8") as handle:
-              r = json.load(handle)
-          assert r["mode"] == "preflight" and r["rows_per_table"] == 100_000_000 and not r["stress_passed"]
-          assert r["minimum_two_bank_bytes"] == 15_494_967_376
+          from pathlib import Path
+          half, three_quarters = [
+              json.loads(Path(f"evidence/full-capacity-{load}.json").read_text())
+              for load in (50, 75)
+          ]
+          for load, r in ((50, half), (75, three_quarters)):
+              assert r["mode"] == "preflight" and r["rows_per_table"] == 100_000_000 and not r["stress_passed"]
+              assert r["packed_hash_load_percent"] == load
+          assert half["minimum_two_bank_bytes"] == 15_494_967_376
+          assert half["peak_server_regions_bytes"] - three_quarters["peak_server_regions_bytes"] == 2_147_483_648
+          admitted = three_quarters["memory_admitted"] and three_quarters["disk_admitted"]
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print(f"admitted={str(admitted).lower()}", file=output)
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
               print("## Two 100M-row packed tables", file=summary)
-              print(f"- Native planned peak region bytes **{r['peak_server_regions_bytes']:,}**", file=summary)
-              print(f"- Sampled grant **{r['machine_capacity']['new_region_bytes']:,}**", file=summary)
-              print(f"- Memory admitted **{r['memory_admitted']}**. Disk admitted **{r['disk_admitted']}**.", file=summary)
+              for load, r in ((50, half), (75, three_quarters)):
+                  print(f"- {load}% plan **{r['peak_server_regions_bytes']:,}** B; grant **{r['machine_capacity']['new_region_bytes']:,}** B.", file=summary)
+              print(f"- 75% full lane admitted **{admitted}**.", file=summary)
               print("- This preflight opens no database and loads no rows.", file=summary)
           PY
       - name: Exercise the helper on a separate 262144-row-per-table sample
-        if: ${{ !inputs.execute_full }}
         env:
           PYTHONPATH: fixture/tools
         run: |
           set -euo pipefail
           python -m pip install -r fixture/tools/requirements-test.txt
-          python .github/fixtures/two_packed_tables.py --binary evidence/ramsql --execute --smoke \
+          python .github/fixtures/two_packed_tables.py --binary evidence/ramsql --hash-load 75 --execute --smoke \
             --wal "$RUNNER_TEMP/two-packed-smoke.wal" --report evidence/smoke.json
       - name: Load and recover exactly two 100M-row tables
-        if: ${{ inputs.execute_full }}
+        if: ${{ steps.capacity.outputs.admitted == 'true' }}
         env:
           PYTHONPATH: fixture/tools
         run: |
           set -euo pipefail
-          python -m pip install -r fixture/tools/requirements-test.txt
-          python .github/fixtures/two_packed_tables.py --binary evidence/ramsql --execute \
+          python .github/fixtures/two_packed_tables.py --binary evidence/ramsql --hash-load 75 --execute \
             --wal "$RUNNER_TEMP/two-packed-full.wal" --report evidence/full-stress.json
       - uses: actions/upload-artifact@v4
         if: always()

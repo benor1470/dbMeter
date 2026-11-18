@@ -31,16 +31,19 @@ def probe(binary, command, flags=()):
     return json.loads(subprocess.check_output([str(binary), command, *flags], timeout=30))
 
 
-def power_of_two_at_least(value):
-    return 1 << (value - 1).bit_length()
+def hash_slots(entries, percent):
+    slots = 2
+    while slots * percent // 100 < entries:
+        slots *= 2
+    return slots
 
 
-def bank_bytes(rows, versions, words):
+def bank_bytes(rows, versions, words, hash_load):
     return (16 * rows + (32 + 8 * words) * versions
-            + 4 * power_of_two_at_least(2 * rows) + 4 * power_of_two_at_least(2 * versions))
+            + 4 * hash_slots(rows, hash_load) + 4 * hash_slots(versions, hash_load))
 
 
-def plan(binary, rows, wal, memory_budget):
+def plan(binary, rows, wal, memory_budget, hash_load):
     slots = probe(binary, "--capabilities")["tables"]
     if slots < 2:
         raise AssertionError("fixture requires two independently admitted banks")
@@ -55,16 +58,19 @@ def plan(binary, rows, wal, memory_budget):
     ]
     if memory_budget is not None:
         options.extend(("--memory-budget", str(memory_budget)))
+    if hash_load == 75:
+        options.append("--packed-hash-load-75")
     machine = probe(binary, "--machine-capacity", options)
     capacities = probe(binary, "--capabilities", options)
     exact("external MVCC header width", machine["storage_version_bytes"], 32)
     exact("planned worker count", machine["read_workers"], WORKERS)
+    exact("effective hash load", machine["packed_hash_load_percent"], hash_load)
     banks = machine["table_storage"]
     expected = dict(rows=rows, versions=versions, integral_row_words=1,
                     committed_scan_projection=False, secondary_hashes=0)
     exact("two packed fact banks", banks[:2], [expected, expected])
-    minimum = 2 * bank_bytes(rows, rows + 1, 1)
-    requested = 2 * bank_bytes(rows, versions, 1)
+    minimum = 2 * bank_bytes(rows, rows + 1, 1, hash_load)
+    requested = 2 * bank_bytes(rows, versions, 1, hash_load)
     if machine["backing_bytes"] <= requested:
         raise AssertionError("engine backing estimate omits the other slots or query references")
 
@@ -92,7 +98,8 @@ def plan(binary, rows, wal, memory_budget):
         "startup_options": options,
         "minimum_two_bank_bytes": minimum,
         "requested_two_bank_bytes": requested,
-        "six_word_two_bank_bytes": 2 * bank_bytes(rows, versions, 6),
+        "six_word_two_bank_bytes": 2 * bank_bytes(rows, versions, 6, hash_load),
+        "packed_hash_load_percent": hash_load,
         "peak_client_regions_bytes": client_regions,
         "peak_reader_regions_bytes": read_regions,
         "peak_server_regions_bytes": peak_regions,
@@ -202,6 +209,7 @@ def main():
     parser.add_argument("--wal", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--memory-budget", type=int)
+    parser.add_argument("--hash-load", choices=(50, 75), default=50, type=int)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
@@ -224,7 +232,7 @@ def main():
     try:
         with binary.open("rb") as handle:
             report["binary_sha256"] = hashlib.file_digest(handle, "sha256").hexdigest()
-        options, capacity = plan(binary, rows, wal, args.memory_budget)
+        options, capacity = plan(binary, rows, wal, args.memory_budget, args.hash_load)
         report.update(capacity)
         if not args.execute:
             report["stage"] = "preflight_only"
