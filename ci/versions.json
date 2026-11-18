@@ -1,8 +1,8 @@
 {
   "ramsql": {
-    "revision": "bbaca185a88e250f8be7d3b97bdbbc87ab499032",
-    "url": "https://github.com/SB0LTD/ramsql/archive/bbaca185a88e250f8be7d3b97bdbbc87ab499032.tar.gz",
-    "sha256": "824af18c2d13ba85b21215ec5ca7f98c54e847704a97136341b1211d813a55b6",
+    "revision": "b33762c6adb7897e2e8a4f2cb00b3aba5374d244",
+    "url": "https://github.com/SB0LTD/ramsql/archive/b33762c6adb7897e2e8a4f2cb00b3aba5374d244.tar.gz",
+    "sha256": "65c667586dab1be12be89a2fb03d00e29cbd2d11a440becb25bba2e8abec550d",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,

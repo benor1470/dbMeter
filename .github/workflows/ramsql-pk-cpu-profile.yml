@@ -2,7 +2,7 @@ name: RAMSQL prepared lookup CPU profile
 
 on:
   push:
-    branches: [ci/ramsql-pk-cpu-profile-20261118]
+    branches: [ci/qualified-main-pk-cpu-profile-20261118]
 
 permissions:
   contents: read
