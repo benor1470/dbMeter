@@ -2,7 +2,7 @@ name: Compact MVCC headers on the durable 100M fixture
 
 on:
   push:
-    branches: [bench/ramsql-compact-version-stamps-100m-20261118]
+    branches: [bench/qualified-main-compact-mvcc-100m-20261118]
   workflow_dispatch:
 
 permissions:
@@ -24,8 +24,8 @@ jobs:
     env:
       COMPACT_VERSION_STAMPS: ${{ matrix.compact }}
       EXPECTED_HEADER_BYTES: ${{ matrix.header }}
-      RAMSQL_SOURCE_REVISION: 6eba65f6ea9e99dd648a60a3fb4caa92b1fc9967
-      RAMSQL_SOURCE_SHA256: c030edeaca34fffd6b3cc612bbedae1d5970ac6bea6bf355cc970aeb1fe60536
+      RAMSQL_SOURCE_REVISION: 810fa97181ac5fd94fb3648406c36bb40ea315d4
+      RAMSQL_SOURCE_SHA256: 6e14dcf3133ef46b78f50497c925976435f47fc4456736cd8215cd3526d78c01
       RAMSQL_FIXTURE_REVISION: bfdf49a4bf017f65d63590eb4aed0309d0874dce
       RAMSQL_FIXTURE_SHA256: 7112f0f063e02a5474f7e14aa4bb81ba354d60ef5ed5d27831c3def85b446c8b
     steps:
