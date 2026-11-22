@@ -1,14 +1,14 @@
-name: Original JDBC worker-locality A/B
+name: Original JDBC compact reactor A/B
 
 on:
   push:
-    branches: [ci/linux-worker-locality-ab-20261118]
+    branches: [ci/compact-worker-poll-ab-20261123]
 
 permissions:
   contents: read
 
 concurrency:
-  group: locality-dbmeter-${{ github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.event.action }}
+  group: compact-reactor-dbmeter-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -48,18 +48,13 @@ jobs:
         env:
           BUILD_VARIANT: ${{ matrix.variant }}
         run: python ci/bootstrap.py "$BUILD_VARIANT"
-      - name: Qualify the exact ReleaseFast candidate before timing
+      - name: Check the parallel reactor in the exact ReleaseFast candidate
+        if: matrix.variant == 'ramsql'
         run: |
           source_dir=$(find .ci-runtime/source -mindepth 1 -maxdepth 1 -type d)
-          mkdir -p reports/worker-locality-releasefast
-          python "$source_dir/tools/test_linux_worker_locality.py" \
-            --binary .ci-runtime/ramsql/bin/ramsql --report reports/worker-locality-releasefast/live.json
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: worker-locality-releasefast-correctness
-          path: reports/worker-locality-releasefast/
-          if-no-files-found: warn
+          python -m pip install 'psycopg[binary]==3.3.6'
+          python "$source_dir/tools/test_server.py" --binary .ci-runtime/ramsql/bin/ramsql --workers 4
+          python "$source_dir/tools/test_workers.py" --binary .ci-runtime/ramsql/bin/ramsql --smoke
       - uses: actions/setup-java@v4
         if: matrix.variant == 'ramsql'
         with:
@@ -114,6 +109,11 @@ jobs:
         with:
           name: ramsql-benchmark-binary
           path: .ci-runtime/downloaded-ramsql
+      - uses: actions/download-artifact@v4
+        if: '!matrix.single_binary'
+        with:
+          name: ramsql-baseline-benchmark-binary
+          path: .ci-runtime/downloaded-baseline
       - name: Restore the supplied private IRDB Java client
         env:
           IRDB_JDBC_PART_1: ${{ secrets.IRDB_JDBC_PART_1 }}
