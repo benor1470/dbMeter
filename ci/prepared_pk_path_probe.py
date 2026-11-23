@@ -36,7 +36,7 @@ def main():
         raise ValueError("PK breakpoint requires an executable with fixed ELF addresses")
     symbols = subprocess.check_output(["nm", "--defined-only", str(binary)], text=True)
     matches = [line.split(maxsplit=2)[0] for line in symbols.splitlines()
-               if line.endswith(".ReadContext.runCachedPrimaryKey")]
+               if line.endswith(".ReadContext.cachedPrimaryKeyView")]
     if len(matches) != 1:
         raise ValueError("Exact prepared PK executor address was not found uniquely")
     script = out / "trace.gdb"
