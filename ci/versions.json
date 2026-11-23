@@ -1,8 +1,8 @@
 {
   "ramsql": {
-    "revision": "f40e685ece9d764500f8fff942188b5c35b906cb",
-    "url": "https://codeload.github.com/SB0LTD/ramsql/tar.gz/f40e685ece9d764500f8fff942188b5c35b906cb",
-    "sha256": "d239930bde34f6b6cb94cd6c8d98a7274b800859741f6061f3090ce073adb48c",
+    "revision": "bc5f8726ed016a2ecc955837fc86f52064f96614",
+    "url": "https://codeload.github.com/SB0LTD/ramsql/tar.gz/bc5f8726ed016a2ecc955837fc86f52064f96614",
+    "sha256": "dcfc53bde3dc2bd63bf2b373d4c82787f228da081a67ce3ee7c61817de61a399",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -45,13 +45,13 @@
         0
       ]
     },
-    "dependency_manifest_sha256": "91630d97cc0292922fa207efabeb70b47126ff58a05f373e928fa8a7d9a7187a",
+    "dependency_manifest_sha256": "0ace8abd350084bd4c151af7f33aed89b4b8eb88335c4968d861c30e5edc94f9",
     "read_cache_bytes": 268435456
   },
   "ramsql_baseline": {
-    "revision": "f40e685ece9d764500f8fff942188b5c35b906cb",
-    "url": "https://codeload.github.com/SB0LTD/ramsql/tar.gz/f40e685ece9d764500f8fff942188b5c35b906cb",
-    "sha256": "d239930bde34f6b6cb94cd6c8d98a7274b800859741f6061f3090ce073adb48c",
+    "revision": "bc5f8726ed016a2ecc955837fc86f52064f96614",
+    "url": "https://codeload.github.com/SB0LTD/ramsql/tar.gz/bc5f8726ed016a2ecc955837fc86f52064f96614",
+    "sha256": "dcfc53bde3dc2bd63bf2b373d4c82787f228da081a67ce3ee7c61817de61a399",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -94,7 +94,7 @@
         0
       ]
     },
-    "dependency_manifest_sha256": "91630d97cc0292922fa207efabeb70b47126ff58a05f373e928fa8a7d9a7187a",
+    "dependency_manifest_sha256": "0ace8abd350084bd4c151af7f33aed89b4b8eb88335c4968d861c30e5edc94f9",
     "read_cache_bytes": 268435456
   },
   "sig": {
