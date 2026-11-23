@@ -36,9 +36,9 @@ def main():
         raise ValueError("PK breakpoint requires an executable with fixed ELF addresses")
     symbols = subprocess.check_output(["nm", "--defined-only", str(binary)], text=True)
     matches = [line.split(maxsplit=2)[0] for line in symbols.splitlines()
-               if line.endswith(".ReadContext.cachedPrimaryKeyView")]
+               if line.endswith(".handleDetachedKeyExchange")]
     if len(matches) != 1:
-        raise ValueError("Exact prepared PK executor address was not found uniquely")
+        raise ValueError("Exact fused exchange entry was not found uniquely")
     script = out / "trace.gdb"
     script.write_text(
         "set pagination off\nset confirm off\nset print thread-events off\n"
@@ -85,7 +85,7 @@ def main():
                 subprocess.run(args, cwd=ROOT, env=dict(os.environ, RAMSQL_PORT=str(port)),
                                stdout=evidence, stderr=subprocess.STDOUT, check=True, timeout=45)
             if MARKER not in server_log.read_text().splitlines():
-                raise RuntimeError("Original JDBC scenario did not reach the fused prepared PK executor")
+                raise RuntimeError("Original JDBC scenario did not reach the fused exchange entry")
         finally:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGTERM)
@@ -99,7 +99,7 @@ def main():
         "scenario": CASE, "sql_property": next(line for line in original_properties.splitlines()
                                               if line.startswith(f"scenario.{CASE}.sql=")),
         "properties_sha256": digest(properties), "driver_sha256": digest(driver),
-        "executor_hit": True, "timing_eligible": False,
+        "fused_exchange_entry_hit": True, "timing_eligible": False,
     }
     (out / "proof.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
 
