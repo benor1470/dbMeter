@@ -1,12 +1,12 @@
 {
   "paired_dependency_manifests": {
     "baseline": "ad29e2065b1d1d78f2b7ace9f0dc84768a9937993f13805679def6921a5fe669",
-    "candidate": "bb71417af1b1980692d04a3a7ecee422b6aed531c74c451fda9e16f691b44c3b"
+    "candidate": "9e51abd8b77342304edec5d0778cc897dd74bc720c4210dd22a28e660a01af7d"
   },
   "ramsql": {
-    "revision": "8b8b4b1877351dd57be7dad259d49c7a60aff581",
-    "url": "https://codeload.github.com/SB0LTD/ramsql/tar.gz/8b8b4b1877351dd57be7dad259d49c7a60aff581",
-    "sha256": "66a52c560e5a087dfc2fb4d3fe1c1108d6307bbcbbb1f2f775d0e9e577c42b73",
+    "revision": "8763c96326ac01c0b922253e3dd6175a3e38254b",
+    "url": "https://codeload.github.com/SB0LTD/ramsql/tar.gz/8763c96326ac01c0b922253e3dd6175a3e38254b",
+    "sha256": "37acdb8e3ed7c276d9707295ff0761f4741a16900fb8cb35449d90423dcae967",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -14,7 +14,7 @@
       "integral-version-banks": true
     },
     "read_cache_bytes": 268435456,
-    "dependency_manifest_sha256": "bb71417af1b1980692d04a3a7ecee422b6aed531c74c451fda9e16f691b44c3b"
+    "dependency_manifest_sha256": "9e51abd8b77342304edec5d0778cc897dd74bc720c4210dd22a28e660a01af7d"
   },
   "ramsql_baseline": {
     "revision": "8d7cf2d880d6f4739a391bbb450c3d410ece48a0",
