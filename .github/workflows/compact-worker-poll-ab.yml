@@ -2,7 +2,7 @@ name: Original JDBC Execute and Sync A/B
 
 on:
   push:
-    branches: [ci/cache-parameter-span-ab-20261123]
+    branches: [ci/shard-reactor-read-ownership-ab-20261123]
 
 permissions:
   contents: read
