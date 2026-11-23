@@ -1,7 +1,7 @@
-name: Original one-million-row lookup with RAMSQL portable Linux loopback
+name: Original one-million-row lookup with RAMSQL indexed Linux loopback
 on:
   push:
-    branches: [ci/loopback-portable-one-client-20261123]
+    branches: [ci/loopback-indexed-original-20261123]
 permissions:
   actions: read
   contents: read
@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: SB0LTD/zpm
-          ref: d508a5602d788178ea0c893b23faa5697da7b7a2
+          ref: b3b1a2ea17cc347f909f164c4baa1440b304b077
           path: .ci-runtime/probe-zpm
       - uses: actions/setup-python@v5
         with:
@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C .ci-runtime/probe-zpm rev-parse HEAD)" = d508a5602d788178ea0c893b23faa5697da7b7a2
+          test "$(git -C .ci-runtime/probe-zpm rev-parse HEAD)" = b3b1a2ea17cc347f909f164c4baa1440b304b077
           python - <<'PY'
           import sys
           import tarfile
@@ -60,7 +60,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        clients: [1]
+        clients: [1, 8]
     env:
       LOOKUP_CLIENTS: ${{ matrix.clients }}
     steps:

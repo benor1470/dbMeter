@@ -36,8 +36,9 @@ def main(probe, clients):
     campaign.cases = [('s1000000_pk', clients)]
     campaign.probe = probe
     campaign.report.update(lookup_clients=clients, expected_cases=[f's1000000_pk/{clients}'],
-                           deployment='RAMSQL Linux same-host TCP socket map, manually enabled',
-                           diagnostic_only=True, merge_allowed=False,
+                           deployment='RAMSQL Linux same-host indexed TCP socket map, manually enabled',
+                           full_suite_merge_allowed=False,
+                           probe_source='b3b1a2ea17cc347f909f164c4baa1440b304b077',
                            probe_sha256=probe_sha256)
     campaign.save()
     try:
