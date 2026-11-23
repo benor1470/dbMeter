@@ -1,4 +1,8 @@
 {
+  "paired_dependency_manifests": {
+    "baseline": "9ef100fed2b12fbd4e3ecad6dab271cae18ee0bfc21837815315b85217dc2438",
+    "candidate": "18978c00c56b44be19f9e4b6b70e5639b44908021859d6eedb70163799dd5096"
+  },
   "ramsql": {
     "revision": "f0ce156cde67b7b569fcfbe8d85da276adecec57",
     "url": "https://codeload.github.com/SB0LTD/ramsql/tar.gz/f0ce156cde67b7b569fcfbe8d85da276adecec57",
