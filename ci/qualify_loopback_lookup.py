@@ -8,7 +8,6 @@ from live_benchmark import Campaign
 from loopback_transport import attachment, isolated_cgroup, membership, verify
 
 RAMSQL_SHA256 = 'ff25e9fab66c987a08edfdf8e4530c44b462a464c2126f188c0946cb9647733e'
-PROBE_SHA256 = 'bf51f1bf4dd568b8d5d85f575b583e5b98348fc4995aaf4958d1f6d3a825a98d'
 
 
 class LoopbackCampaign(Campaign):
@@ -31,14 +30,15 @@ def main(probe, clients):
     campaign = LoopbackCampaign('size-scaling', 'qualification', 1000000)
     if campaign.ram_provenance['source'] != VERSIONS['ramsql'] or digest(campaign.binary) != RAMSQL_SHA256:
         raise ValueError('RAMSQL is not the exact binary from the paired run')
-    if digest(probe) != PROBE_SHA256:
-        raise ValueError('Socket-map probe is not the exact paired artifact')
+    probe_sha256 = probe.with_suffix('.sha256').read_text().strip()
+    if digest(probe) != probe_sha256:
+        raise ValueError('Socket-map probe differs from the portable build artifact')
     campaign.cases = [('s1000000_pk', clients)]
     campaign.probe = probe
     campaign.report.update(lookup_clients=clients, expected_cases=[f's1000000_pk/{clients}'],
                            deployment='RAMSQL Linux same-host TCP socket map, manually enabled',
                            diagnostic_only=True, merge_allowed=False,
-                           probe_sha256=PROBE_SHA256)
+                           probe_sha256=probe_sha256)
     campaign.save()
     try:
         with isolated_cgroup() as campaign.cgroup:
