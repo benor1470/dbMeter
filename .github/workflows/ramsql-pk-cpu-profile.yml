@@ -2,7 +2,7 @@ name: RAMSQL prepared lookup CPU profile
 
 on:
   push:
-    branches: [ci/matched-lookup-cpu-profile-20261123]
+    branches: [ci/transport-topology-control-20261123]
 
 permissions:
   contents: read

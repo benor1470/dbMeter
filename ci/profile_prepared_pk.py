@@ -1,4 +1,4 @@
-"""Profile RAMSQL and native PostgreSQL with stock JDBC on the same runner."""
+"""Measure stock PostgreSQL exchanges on sibling and separate physical cores."""
 import json
 import os
 from pathlib import Path
@@ -52,12 +52,30 @@ def group_counters(pids):
     return {tid: counters for pid in pids for tid, counters in thread_counters(pid).items()}
 
 
-def profile(campaign, engine, child, client_count, perf):
-    name = f'{engine}-s1000000_pk-{client_count}'
+def physical_placement():
+    allowed = os.sched_getaffinity(0)
+    for server in sorted(allowed):
+        siblings = set()
+        source = Path(f'/sys/devices/system/cpu/cpu{server}/topology/thread_siblings_list')
+        for item in source.read_text().strip().split(','):
+            first, _, last = item.partition('-')
+            siblings.update(range(int(first), int(last or first) + 1))
+        same = sorted((siblings & allowed) - {server})
+        separate = sorted(allowed - siblings)
+        if same and separate:
+            return dict(server=server, same=same[0], separate=separate[0])
+    raise RuntimeError('This runner does not expose both sibling and separate CPU cores')
+
+
+def profile(campaign, engine, child, placement, cpu, perf):
+    name = f'{engine}-s1000000_pk-{placement}'
     destination = campaign.out / name
-    argv = campaign.java('load', engine, ['--only', 's1000000_pk', '--set', f'load.threads={client_count}',
+    for pid in server_pids(campaign, engine, child):
+        subprocess.run(['sudo', 'taskset', '-apc', str(cpu['server']), str(pid)],
+                       check=True, stdout=subprocess.DEVNULL, timeout=10)
+    argv = ['taskset', '-c', str(cpu[placement]), *campaign.java('load', engine, ['--only', 's1000000_pk', '--set', 'load.threads=1',
         '--set', 'load.rampUp=5s', '--set', 'load.warmup=15s', '--set', 'load.duration=60s',
-        '--node', 'local', '--run-id', name, '--out', str(destination)])
+        '--node', 'local', '--run-id', name, '--out', str(destination)])]
     before = host_snapshot()
     trace = Path(os.environ['RUNNER_TEMP']) / f'{name}.perf.data'
     with (campaign.out / (name + '.log')).open('wb') as load_log, \
@@ -69,6 +87,8 @@ def profile(campaign, engine, child, client_count, perf):
                 if load.poll() is not None:
                     raise RuntimeError('JDBC load ended before CPU sampling')
                 pids = server_pids(campaign, engine, child)
+                if any(os.sched_getaffinity(pid) != {cpu['server']} for pid in pids) or os.sched_getaffinity(load.pid) != {cpu[placement]}:
+                    raise RuntimeError('Server and JDBC did not retain the scheduled placement')
                 threads_before = group_counters(pids)
                 jdbc_before = thread_counters(load.pid)
                 sample_start_ns = time.time_ns()
@@ -84,7 +104,7 @@ def profile(campaign, engine, child, client_count, perf):
             finally:
                 if load.poll() is None:
                     load.kill()
-    run = dict(engine=engine, case=f's1000000_pk/{client_count}', returncode=returncode,
+    run = dict(engine=engine, case='s1000000_pk/1', placement=placement, returncode=returncode,
                report=str((destination / 'local.json').relative_to(campaign.out)),
                host_before=before, host_after=host_snapshot())
     run['result'] = read_run(campaign.out, campaign.report, run)
@@ -103,8 +123,9 @@ def main(perf):
     pg_driver = download(VERSIONS['postgres_jdbc'], ROOT / 'drivers/postgresql-42.7.4.jar')
     (RUNTIME / 'dependencies.json').write_text(json.dumps({'postgres_jdbc_sha256': digest(pg_driver)}))
     campaign = Campaign('size-scaling', 'qualification', 1000000)
+    cpu = physical_placement()
     campaign.report.update(diagnostic_only=True, merge_allowed=False, profiling_tool=Path(perf).name,
-                           scope='Original prepared JDBC reads with same-runner server and Java CPU sampling for both engines')
+                           scope='Diagnostic CPU placement for the original one-client JDBC case', cpu_placement=cpu)
     campaign.save()
     generator = campaign.folder / 'gen.py'
     if campaign.command('original-generator', [sys.executable, '-I', str(generator)]):
@@ -120,8 +141,8 @@ def main(perf):
         if campaign.command('postgres-checks', command):
             raise RuntimeError('Original native PostgreSQL correctness checks failed')
         check_xml(checks, required | CAPABILITY_CHECKS)
-        for client_count in (1, 8):
-            campaign.report['runs'].append(profile(campaign, 'postgres', None, client_count, perf))
+        for placement in ('same', 'separate'):
+            campaign.report['runs'].append(profile(campaign, 'postgres', None, placement, cpu, perf))
             campaign.save()
     campaign.data_files = [ROOT / f'build/size-scaling/ramsql_load_t_{size}.sql' for size in SIZES]
     campaign.check_engine('ramsql')
@@ -135,8 +156,8 @@ def main(perf):
         if campaign.command('fresh-profile-checks', campaign.java('check', 'ramsql', ['--junit', str(checks)])):
             raise RuntimeError('Original size-scaling correctness checks failed')
         check_xml(checks, required)
-        for client_count in (1, 8):
-            campaign.report['runs'].append(profile(campaign, 'ramsql', child, client_count, perf))
+        for placement in ('separate', 'same'):
+            campaign.report['runs'].append(profile(campaign, 'ramsql', child, placement, cpu, perf))
             campaign.save()
     campaign.report['completed'] = True
     campaign.save()
