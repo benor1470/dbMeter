@@ -2,7 +2,7 @@ name: Original JDBC Execute and Sync A/B
 
 on:
   push:
-    branches: [ci/stream-prepared-key-ab-20261123]
+    branches: [ci/readiness-to-reply-ab-20261123]
 
 permissions:
   contents: read
