@@ -1,8 +1,8 @@
-name: Original JDBC compact reactor A/B
+name: Original JDBC Execute and Sync A/B
 
 on:
   push:
-    branches: [ci/skip-reader-wake-ab-20261123]
+    branches: [ci/coalesce-execute-sync-ab-20261123]
 
 permissions:
   contents: read
