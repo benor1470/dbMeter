@@ -1,6 +1,7 @@
 """Same-VM RAMSQL control/candidate diagnostic; never all-engine qualification."""
 import json
 import os
+from pathlib import Path
 import re
 import statistics
 import sys
@@ -12,6 +13,13 @@ from live_benchmark import Campaign, ENGINES, SIZES, check_original_inputs
 from runner import host_snapshot
 
 ORDER = (('baseline', 'candidate'), ('candidate', 'baseline'), ('baseline', 'candidate'))
+
+
+def process_cpu_ticks(pid):
+    stat = (Path('/proc') / str(pid) / 'stat').read_text().rsplit(')', 1)[1].split()
+    return int(stat[11]) + int(stat[12])
+
+
 SUITE = VERSIONS.get('paired_suite', 'sales-subset')
 FOCUS = VERSIONS.get('paired_focus', 's3_top_products')
 LOCALITY = VERSIONS.get('paired_linux_worker_locality', False)
@@ -196,7 +204,7 @@ class PairedCampaign(Campaign):
                 self.ramsql_read_cache_bytes = (self.cache_budgets[mode] if self.cache_budgets else
                                                self.ramsql_source.get('read_cache_bytes', 0))
                 self.ramsql_worker_locality = LOCALITY and mode == 'candidate'
-                with self.running('ramsql'):
+                with self.running('ramsql') as server:
                     self.report['paired_admission'][f'{mode}/{pair}'] = self.report['ramsql_machine_capacity']
                     self.report['paired_server_arguments'][f'{mode}/{pair}'] = arguments = self.report['ramsql_server_arguments']
                     if SUITE == 'size-scaling':
@@ -224,13 +232,16 @@ class PairedCampaign(Campaign):
                         if scenario != 'mixed':
                             tail += ['--only', scenario]
                         before = host_snapshot()
+                        cpu_before = process_cpu_ticks(server.pid)
                         code = self.command(name, self.java('load', 'ramsql', tail))
+                        cpu_used = process_cpu_ticks(server.pid) - cpu_before
                         raw = target / 'local.json'
                         self.report['runs'].append(dict(engine='ramsql', variant=mode, trial=pair, case=case,
                             binary_sha256=self.report['paired_sources'][mode]['binary_sha256'], returncode=code,
                             read_cache_bytes=self.ramsql_read_cache_bytes,
                             report=str(raw.relative_to(self.out)) if raw.exists() else None,
-                            host_before=before, host_after=host_snapshot()))
+                            host_before=before, host_after=host_snapshot(),
+                            server_cpu_seconds_including_ramp_and_warmup=cpu_used / os.sysconf('SC_CLK_TCK')))
                         self.save()
                         read_run(self.out, self.report, self.report['runs'][-1])
                     # Capability probes create extra tables, so keep them off

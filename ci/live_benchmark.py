@@ -309,7 +309,7 @@ class Campaign:
                     workers = int(argv[argv.index('--workers') + 1])
                     self.report['ramsql_machine_capacity']['live_worker_affinity'] = worker_affinity(
                         child, workers, self.ramsql_worker_locality)
-                yield
+                yield child
             finally:
                 if child.poll() is None:
                     child.terminate()
