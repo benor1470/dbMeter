@@ -1,5 +1,4 @@
 """Paired diagnostics with the original prepared JDBC workload and one RAMSQL binary."""
-from contextlib import nullcontext
 import json
 from pathlib import Path
 import statistics
@@ -11,7 +10,7 @@ from live_benchmark import Campaign, SIZES, original_inputs
 from loopback_transport import attachment, isolated_cgroup, membership, verify
 from runner import host_snapshot
 
-ORDER = (('control', 'duplex'), ('duplex', 'control'), ('control', 'duplex'))
+ORDER = (('hash', 'indexed'), ('indexed', 'hash'), ('hash', 'indexed'))
 CHECKS = {f's{size}_{check}' for size in SIZES for check in ('a_pk', 'b_filter', 'c_topn', 'd_last')}
 BINARY = 'ff25e9fab66c987a08edfdf8e4530c44b462a464c2126f188c0946cb9647733e'
 
@@ -31,7 +30,7 @@ def check(campaign, name, cases):
     check_xml(xml, cases)
 
 
-def main(probe, clients):
+def main(probes, clients):
     if clients not in (1, 8):
         raise ValueError('Expected an original one- or eight-client case')
     campaign = Campaign('size-scaling', 'qualification', 1000000)
@@ -39,22 +38,29 @@ def main(probe, clients):
     case = f's1000000_pk/{clients}'
     if campaign.ram_provenance['source'] != VERSIONS['ramsql'] or digest(campaign.binary) != BINARY:
         raise ValueError('This experiment requires the exact previously qualified RAMSQL executable')
+    probe_digests = {name: digest(path) for name, path in probes.items()}
+    for name, path in probes.items():
+        if probe_digests[name] != path.with_suffix('.sha256').read_text().strip():
+            raise ValueError(f'Socket-map probe differs from its build artifact: {name}')
     campaign.report.update(diagnostic_only=True, merge_allowed=False, paired_order=ORDER,
-                           expected_cases=[case], scope='Linux loopback socket map on one isolated TCP port',
-                           probe_sha256=digest(probe), original_input_sha256=original_inputs())
+                           expected_cases=[case], scope='Hash versus indexed peers on the same Linux loopback deployment',
+                           probe_sha256=probe_digests, original_input_sha256=original_inputs())
     campaign.save()
     if campaign.command('original-generator', [sys.executable, '-I', str(campaign.folder / 'gen.py')]):
         raise RuntimeError('Original size-scaling generator failed')
     campaign.prepare_configs()
     campaign.data_files = [ROOT / f'build/size-scaling/ramsql_load_t_{size}.sql' for size in SIZES]
     with isolated_cgroup() as cgroup:
-        campaign.report['wire'] = verify(probe, cgroup, port, ('replies', 'duplex'), campaign.out)
+        campaign.report['wire'] = {}
+        for name, probe in probes.items():
+            wire = campaign.out / f'wire-{name}'
+            wire.mkdir()
+            campaign.report['wire'][name] = verify(probe, cgroup, port, ('duplex',), wire)
         campaign.save()
         for trial, order in enumerate(ORDER, 1):
             for variant in order:
                 label = f'{variant}-{trial}'
-                lease = (attachment(probe, cgroup, port, variant, campaign.out / f'{label}-socket-map.log')
-                         if variant == 'duplex' else nullcontext())
+                lease = attachment(probes[variant], cgroup, port, 'duplex', campaign.out / f'{label}-socket-map.log')
                 with lease, campaign.running('ramsql') as server:
                     if membership(server.pid) != f'/{cgroup.name}':
                         raise RuntimeError('The RAMSQL listener escaped the isolated cgroup')
@@ -79,7 +85,7 @@ def main(probe, clients):
                     check(campaign, label + '-capabilities', CAPABILITY_CHECKS)
                     campaign.save()
     results = {(r['trial'], r['variant']): r['result'] for r in campaign.report['runs']}
-    ratios = [results[(i, 'duplex')]['qps'] / results[(i, 'control')]['qps'] for i in range(1, 4)]
+    ratios = [results[(i, 'indexed')]['qps'] / results[(i, 'hash')]['qps'] for i in range(1, 4)]
     campaign.report['summary'] = dict(paired_qps_ratios=ratios, median_paired_ratio=statistics.median(ratios),
                                       median_qps={v: statistics.median(results[i, v]['qps'] for i in range(1, 4))
                                                   for v in ORDER[0]},
@@ -90,4 +96,5 @@ def main(probe, clients):
 
 
 if __name__ == '__main__':
-    main(Path(sys.argv[1]).resolve(strict=True), int(sys.argv[2]))
+    main({name: Path(path).resolve(strict=True) for name, path in zip(ORDER[0], sys.argv[1:3], strict=True)},
+         int(sys.argv[3]))
