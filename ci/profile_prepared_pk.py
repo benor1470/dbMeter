@@ -1,4 +1,4 @@
-"""Profile the RAMSQL server and stock JDBC process on the original lookup."""
+"""Profile RAMSQL and native PostgreSQL with stock JDBC on the same runner."""
 import json
 import os
 from pathlib import Path
@@ -14,7 +14,11 @@ from runner import host_snapshot
 
 def thread_counters(pid):
     result = {}
-    for thread in (Path('/proc') / str(pid) / 'task').iterdir():
+    try:
+        threads = list((Path('/proc') / str(pid) / 'task').iterdir())
+    except FileNotFoundError:
+        return result
+    for thread in threads:
         try:
             stat = (thread / 'stat').read_text().rsplit(')', 1)[1].split()
             cpu, wait, switches = map(int, (thread / 'schedstat').read_text().split())
@@ -34,10 +38,24 @@ def thread_deltas(before, after):
             for tid, counters in after.items() if tid in before}
 
 
-def profile(campaign, child, client_count, perf):
-    name = f's1000000_pk-{client_count}'
+def server_pids(campaign, engine, child):
+    if engine == 'ramsql':
+        return [child.pid]
+    rows = subprocess.check_output(['docker', 'top', campaign.container, '-eo', 'pid'], text=True, timeout=10)
+    pids = [int(row.strip()) for row in rows.splitlines()[1:]]
+    if len(pids) < 2:
+        raise RuntimeError('Native PostgreSQL process set was incomplete')
+    return pids
+
+
+def group_counters(pids):
+    return {tid: counters for pid in pids for tid, counters in thread_counters(pid).items()}
+
+
+def profile(campaign, engine, child, client_count, perf):
+    name = f'{engine}-s1000000_pk-{client_count}'
     destination = campaign.out / name
-    argv = campaign.java('load', 'ramsql', ['--only', 's1000000_pk', '--set', f'load.threads={client_count}',
+    argv = campaign.java('load', engine, ['--only', 's1000000_pk', '--set', f'load.threads={client_count}',
         '--set', 'load.rampUp=5s', '--set', 'load.warmup=15s', '--set', 'load.duration=60s',
         '--node', 'local', '--run-id', name, '--out', str(destination)])
     before = host_snapshot()
@@ -50,14 +68,15 @@ def profile(campaign, child, client_count, perf):
                 time.sleep(25)
                 if load.poll() is not None:
                     raise RuntimeError('JDBC load ended before CPU sampling')
-                threads_before = thread_counters(child.pid)
+                pids = server_pids(campaign, engine, child)
+                threads_before = group_counters(pids)
                 jdbc_before = thread_counters(load.pid)
                 sample_start_ns = time.time_ns()
                 subprocess.run(['sudo', perf, 'record', '--quiet', '--event', 'cpu-clock', '--freq', '199',
-                    '--call-graph', 'dwarf,4096', '--pid', f'{child.pid},{load.pid}', '--output', str(trace),
+                    '--call-graph', 'dwarf,4096', '--pid', ','.join(map(str, [*pids, load.pid])), '--output', str(trace),
                     '--', 'sleep', '30'], stdout=perf_log, stderr=subprocess.STDOUT, check=True, timeout=45)
                 sample_end_ns = time.time_ns()
-                threads_after = thread_counters(child.pid)
+                threads_after = group_counters(pids)
                 jdbc_after = thread_counters(load.pid)
                 if load.poll() is not None:
                     raise RuntimeError('JDBC load ended before the sample interval completed')
@@ -65,7 +84,7 @@ def profile(campaign, child, client_count, perf):
             finally:
                 if load.poll() is None:
                     load.kill()
-    run = dict(engine='ramsql', case=f's1000000_pk/{client_count}', returncode=returncode,
+    run = dict(engine=engine, case=f's1000000_pk/{client_count}', returncode=returncode,
                report=str((destination / 'local.json').relative_to(campaign.out)),
                host_before=before, host_after=host_snapshot())
     run['result'] = read_run(campaign.out, campaign.report, run)
@@ -85,7 +104,7 @@ def main(perf):
     (RUNTIME / 'dependencies.json').write_text(json.dumps({'postgres_jdbc_sha256': digest(pg_driver)}))
     campaign = Campaign('size-scaling', 'qualification', 1000000)
     campaign.report.update(diagnostic_only=True, merge_allowed=False, profiling_tool=Path(perf).name,
-                           scope='Original prepared JDBC read with simultaneous server and Java CPU sampling')
+                           scope='Original prepared JDBC reads with same-runner server and Java CPU sampling for both engines')
     campaign.save()
     generator = campaign.folder / 'gen.py'
     if campaign.command('original-generator', [sys.executable, '-I', str(generator)]):
@@ -94,6 +113,16 @@ def main(perf):
     campaign.report['original_input_sha256'] = original_inputs()
     subprocess.run(['docker', 'pull', VERSIONS['postgres_image']], check=True, timeout=180)
     required = {f's{size}_{kind}' for size in SIZES for kind in ('a_pk', 'b_filter', 'c_topn', 'd_last')}
+    with campaign.running('postgres'):
+        checks = campaign.out / 'postgres-checks.xml'
+        command = campaign.java('check', 'postgres', ['--junit', str(checks)])
+        command.remove('--skip-setup')
+        if campaign.command('postgres-checks', command):
+            raise RuntimeError('Original native PostgreSQL correctness checks failed')
+        check_xml(checks, required | CAPABILITY_CHECKS)
+        for client_count in (1, 8):
+            campaign.report['runs'].append(profile(campaign, 'postgres', None, client_count, perf))
+            campaign.save()
     campaign.data_files = [ROOT / f'build/size-scaling/ramsql_load_t_{size}.sql' for size in SIZES]
     campaign.check_engine('ramsql')
     campaign.save()
@@ -107,7 +136,7 @@ def main(perf):
             raise RuntimeError('Original size-scaling correctness checks failed')
         check_xml(checks, required)
         for client_count in (1, 8):
-            campaign.report['runs'].append(profile(campaign, child, client_count, perf))
+            campaign.report['runs'].append(profile(campaign, 'ramsql', child, client_count, perf))
             campaign.save()
     campaign.report['completed'] = True
     campaign.save()
