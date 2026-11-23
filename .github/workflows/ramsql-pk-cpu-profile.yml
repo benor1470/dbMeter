@@ -2,7 +2,7 @@ name: RAMSQL prepared lookup CPU profile
 
 on:
   push:
-    branches: [ci/lookup-end-to-end-profile-20261123]
+    branches: [ci/fused-prepared-lookup-profile-20261123]
 
 permissions:
   contents: read
