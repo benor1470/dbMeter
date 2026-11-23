@@ -2,7 +2,7 @@ name: Original one-million-row lookup against native references
 
 on:
   push:
-    branches: [ci/fused-prepared-lookup-qualification-20261123]
+    branches: [ci/stream-prepared-key-qualification-20261123]
 
 permissions:
   contents: read
