@@ -7,10 +7,12 @@ from bootstrap import VERSIONS, digest
 from live_benchmark import Campaign
 from loopback_transport import attachment, isolated_cgroup, membership, verify
 
-RAMSQL_SHA256 = 'ff25e9fab66c987a08edfdf8e4530c44b462a464c2126f188c0946cb9647733e'
+RAMSQL_SHA256 = '949863cb89f0c2e4193c9145b054baa3bdebd25073d37007325f1473457fa85e'
 
 
 class LoopbackCampaign(Campaign):
+    ramsql_direct_receive = True
+
     @contextmanager
     def running(self, engine):
         if engine != 'ramsql':
@@ -29,14 +31,14 @@ def main(probe, clients):
         raise ValueError('Expected an original lookup client count')
     campaign = LoopbackCampaign('size-scaling', 'qualification', 1000000)
     if campaign.ram_provenance['source'] != VERSIONS['ramsql'] or digest(campaign.binary) != RAMSQL_SHA256:
-        raise ValueError('RAMSQL is not the exact binary from the paired run')
+        raise ValueError('RAMSQL is not the exact bounded-receive binary from the paired run')
     probe_sha256 = probe.with_suffix('.sha256').read_text().strip()
     if digest(probe) != probe_sha256:
         raise ValueError('Socket-map probe differs from the portable build artifact')
     campaign.cases = [('s1000000_pk', clients)]
     campaign.probe = probe
     campaign.report.update(lookup_clients=clients, expected_cases=[f's1000000_pk/{clients}'],
-                           deployment='RAMSQL Linux same-host indexed TCP socket map, manually enabled',
+                           deployment='RAMSQL Linux same-host indexed TCP socket map and bounded receive, explicitly enabled',
                            full_suite_merge_allowed=False,
                            probe_source='b3b1a2ea17cc347f909f164c4baa1440b304b077',
                            probe_sha256=probe_sha256)

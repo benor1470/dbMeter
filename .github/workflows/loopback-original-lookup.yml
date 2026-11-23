@@ -1,66 +1,18 @@
 name: Original one-million-row lookup with RAMSQL indexed Linux loopback
 on:
   push:
-    branches: [ci/loopback-indexed-original-20261123]
+    branches: [ci/loopback-indexed-direct-one-20261123]
 permissions:
   actions: read
   contents: read
 jobs:
-  probe:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: SB0LTD/zpm
-          ref: b3b1a2ea17cc347f909f164c4baa1440b304b077
-          path: .ci-runtime/probe-zpm
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Build the pure Sig socket-map probe
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git -C .ci-runtime/probe-zpm rev-parse HEAD)" = b3b1a2ea17cc347f909f164c4baa1440b304b077
-          python - <<'PY'
-          import sys
-          import tarfile
-          sys.path.insert(0, 'ci')
-          from bootstrap import RUNTIME, VERSIONS, download
-          for name, spec in (('sig-sdk', VERSIONS['sig']), ('ramsql-source', VERSIONS['ramsql'])):
-              with tarfile.open(download(spec, RUNTIME / f'{name}.tar')) as archive:
-                  archive.extractall(RUNTIME / name, filter='data')
-          PY
-          sdk=$(find "$PWD/.ci-runtime/sig-sdk" -type f -path '*/bin/sig')
-          source=$(find .ci-runtime/ramsql-source -mindepth 1 -maxdepth 1 -type d)
-          python "$source/tools/prepare_sig_runtime.py" --installed-lib "${sdk%/bin/sig}/lib" --output .ci-runtime/runtime
-          "$sdk" build-exe --zig-lib-dir "$PWD/.ci-runtime/runtime/lib" -target x86_64-linux-musl -mcpu=baseline -O ReleaseFast --dep tcp_loopback -Mroot=.ci-runtime/probe-zpm/tools/tcp_loopback_probe.sig -Mtcp_loopback=.ci-runtime/probe-zpm/src/platform/tcp_loopback_linux.sig -femit-bin="$RUNNER_TEMP/tcp_loopback_probe"
-          sha256sum "$RUNNER_TEMP/tcp_loopback_probe" | cut -d " " -f 1 > "$RUNNER_TEMP/tcp_loopback_probe.sha256"
-          python ci/loopback_transport.py "$RUNNER_TEMP/tcp_loopback_probe" "$RUNNER_TEMP/wire"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: loopback-probe
-          path: |
-            ${{ runner.temp }}/tcp_loopback_probe
-            ${{ runner.temp }}/tcp_loopback_probe.sha256
-            ${{ runner.temp }}/wire/
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: loopback-probe-failure
-          path: ${{ runner.temp }}/wire/
-          if-no-files-found: ignore
   primary-key:
-    needs: probe
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        clients: [1, 8]
+        clients: [1]
     env:
       LOOKUP_CLIENTS: ${{ matrix.clients }}
     steps:
@@ -79,12 +31,14 @@ jobs:
         with:
           name: ramsql-benchmark-binary
           path: .ci-runtime/downloaded-ramsql
-          run-id: 45180837749
+          run-id: 45220765798
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
         with:
           name: loopback-probe
           path: .ci-runtime/probe
+          run-id: 45222269257
+          github-token: ${{ github.token }}
       - name: Restore the supplied private IRDB Java client
         env:
           IRDB_JDBC_PART_1: ${{ secrets.IRDB_JDBC_PART_1 }}
