@@ -2,7 +2,7 @@ name: Original JDBC Execute and Sync A/B
 
 on:
   push:
-    branches: [ci/coalesce-execute-sync-ab-20261123]
+    branches: [ci/cache-parameter-span-ab-20261123]
 
 permissions:
   contents: read
