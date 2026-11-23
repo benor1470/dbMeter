@@ -1,0 +1,59 @@
+name: Retry readiness dispatch comparison for one client
+on:
+  push:
+    branches: [ci/readiness-to-reply-retry-1m-20261123]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ramsql-benchmark-binary
+          run-id: 45180837749
+          github-token: ${{ github.token }}
+          path: .ci-runtime/downloaded-ramsql
+      - uses: actions/download-artifact@v4
+        with:
+          name: ramsql-baseline-benchmark-binary
+          run-id: 45180837749
+          github-token: ${{ github.token }}
+          path: .ci-runtime/downloaded-baseline
+      - name: Restore the supplied private IRDB Java client
+        env:
+          IRDB_JDBC_PART_1: ${{ secrets.IRDB_JDBC_PART_1 }}
+          IRDB_JDBC_PART_2: ${{ secrets.IRDB_JDBC_PART_2 }}
+          IRDB_JDBC_PART_3: ${{ secrets.IRDB_JDBC_PART_3 }}
+          IRDB_JDBC_PART_4: ${{ secrets.IRDB_JDBC_PART_4 }}
+          IRDB_JDBC_PART_5: ${{ secrets.IRDB_JDBC_PART_5 }}
+        run: python ci/bootstrap.py dependencies
+      - name: Build the unchanged dbMeter and IRDB adapter
+        run: sh build.sh
+      - name: Same-runner baseline/candidate AB BA AB comparison
+        env:
+          PAIRED_CASE: s1000000_pk/1
+        run: python ci/paired_benchmark.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: paired-size-scaling-s1000000_pk-1
+          path: reports/live/size-scaling/
+          if-no-files-found: error
+          retention-days: 30
