@@ -1,8 +1,8 @@
 {
   "ramsql": {
-    "revision": "6c947808c11e4673029652d37fc214b1842974b0",
-    "url": "https://codeload.github.com/SB0LTD/ramsql/tar.gz/6c947808c11e4673029652d37fc214b1842974b0",
-    "sha256": "f1afe0a8a79425c00260bcce96e6c5c9f7ab9b113741c1ac3683f5bea97c47ed",
+    "revision": "a00266248e5c6c6b10823dd7323459f2a0a94042",
+    "url": "https://codeload.github.com/SB0LTD/ramsql/tar.gz/a00266248e5c6c6b10823dd7323459f2a0a94042",
+    "sha256": "23f5a6a12b5792e9b7f9e2d2b42cd3e963d42bec1511aebe48a945ca0054f3fd",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -10,7 +10,7 @@
       "integral-version-banks": true
     },
     "read_cache_bytes": 268435456,
-    "dependency_manifest_sha256": "9e51abd8b77342304edec5d0778cc897dd74bc720c4210dd22a28e660a01af7d"
+    "dependency_manifest_sha256": "9b1b3c5c950eac8c0fbd76e4f8fa42f880560e4314cb85c0c70b5ce2c86c0fd8"
   },
   "ramsql_baseline": {
     "revision": "6c947808c11e4673029652d37fc214b1842974b0",

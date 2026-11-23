@@ -282,6 +282,8 @@ class Campaign:
                     flags = ['--read-cache-bytes', str(cache_request)]
                     argv += flags
                     probe += flags
+                if getattr(self, 'ramsql_direct_receive', False):
+                    argv.append('--linux-direct-receive')
                 self.report['ramsql_server_arguments'] = argv[1:]
                 capacity = json.loads(subprocess.check_output(probe, text=True, timeout=30))
                 self.report['ramsql_machine_capacity'] = capacity

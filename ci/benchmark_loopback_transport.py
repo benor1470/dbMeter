@@ -1,5 +1,4 @@
 """Paired diagnostics with the original prepared JDBC workload and one RAMSQL binary."""
-from contextlib import nullcontext
 import json
 from pathlib import Path
 import statistics
@@ -11,9 +10,8 @@ from live_benchmark import Campaign, SIZES, original_inputs
 from loopback_transport import attachment, isolated_cgroup, membership, verify
 from runner import host_snapshot
 
-ORDER = (('control', 'duplex'), ('duplex', 'control'), ('control', 'duplex'))
+ORDER = (('poll', 'direct'), ('direct', 'poll'), ('poll', 'direct'))
 CHECKS = {f's{size}_{check}' for size in SIZES for check in ('a_pk', 'b_filter', 'c_topn', 'd_last')}
-BINARY = 'ff25e9fab66c987a08edfdf8e4530c44b462a464c2126f188c0946cb9647733e'
 
 
 def cpu(cgroup):
@@ -37,10 +35,12 @@ def main(probe, clients):
     campaign = Campaign('size-scaling', 'qualification', 1000000)
     port = campaign.port['ramsql']
     case = f's1000000_pk/{clients}'
-    if campaign.ram_provenance['source'] != VERSIONS['ramsql'] or digest(campaign.binary) != BINARY:
-        raise ValueError('This experiment requires the exact previously qualified RAMSQL executable')
+    if campaign.ram_provenance['source'] != VERSIONS['ramsql']:
+        raise ValueError('This experiment requires the exact pinned RAMSQL executable')
+    if digest(probe) != probe.with_suffix('.sha256').read_text().strip():
+        raise ValueError('Socket-map probe differs from the portable build')
     campaign.report.update(diagnostic_only=True, merge_allowed=False, paired_order=ORDER,
-                           expected_cases=[case], scope='Linux loopback socket map on one isolated TCP port',
+                           expected_cases=[case], scope='Poll versus bounded receive with the same Linux loopback socket map',
                            probe_sha256=digest(probe), original_input_sha256=original_inputs())
     campaign.save()
     if campaign.command('original-generator', [sys.executable, '-I', str(campaign.folder / 'gen.py')]):
@@ -48,16 +48,22 @@ def main(probe, clients):
     campaign.prepare_configs()
     campaign.data_files = [ROOT / f'build/size-scaling/ramsql_load_t_{size}.sql' for size in SIZES]
     with isolated_cgroup() as cgroup:
-        campaign.report['wire'] = verify(probe, cgroup, port, ('replies', 'duplex'), campaign.out)
+        campaign.report['wire'] = verify(probe, cgroup, port, ('duplex',), campaign.out)
         campaign.save()
         for trial, order in enumerate(ORDER, 1):
             for variant in order:
                 label = f'{variant}-{trial}'
-                lease = (attachment(probe, cgroup, port, variant, campaign.out / f'{label}-socket-map.log')
-                         if variant == 'duplex' else nullcontext())
+                campaign.ramsql_direct_receive = variant == 'direct'
+                lease = attachment(probe, cgroup, port, 'duplex', campaign.out / f'{label}-socket-map.log')
                 with lease, campaign.running('ramsql') as server:
                     if membership(server.pid) != f'/{cgroup.name}':
                         raise RuntimeError('The RAMSQL listener escaped the isolated cgroup')
+                    arguments = campaign.report['ramsql_server_arguments']
+                    if variant == 'poll' and trial == 1:
+                        control_arguments = arguments
+                    expected = [*control_arguments, '--linux-direct-receive'] if variant == 'direct' else control_arguments
+                    if arguments != expected:
+                        raise RuntimeError('The server arguments differ by more than the direct receive flag')
                     for source in campaign.data_files:
                         campaign.psql(source)
                     check(campaign, label + '-checks', CHECKS)
@@ -72,6 +78,7 @@ def main(probe, clients):
                     elapsed = {name: count - before[name] for name, count in cpu(cgroup).items()}
                     run = dict(engine='ramsql', case=case, trial=trial, variant=variant, returncode=code,
                                report=str(raw.relative_to(campaign.out)), cgroup_cpu_including_warmup=elapsed,
+                               arguments=arguments,
                                host_before=host_before, host_after=host_snapshot())
                     campaign.report['runs'].append(run)
                     campaign.save()
@@ -79,7 +86,7 @@ def main(probe, clients):
                     check(campaign, label + '-capabilities', CAPABILITY_CHECKS)
                     campaign.save()
     results = {(r['trial'], r['variant']): r['result'] for r in campaign.report['runs']}
-    ratios = [results[(i, 'duplex')]['qps'] / results[(i, 'control')]['qps'] for i in range(1, 4)]
+    ratios = [results[(i, 'direct')]['qps'] / results[(i, 'poll')]['qps'] for i in range(1, 4)]
     campaign.report['summary'] = dict(paired_qps_ratios=ratios, median_paired_ratio=statistics.median(ratios),
                                       median_qps={v: statistics.median(results[i, v]['qps'] for i in range(1, 4))
                                                   for v in ORDER[0]},

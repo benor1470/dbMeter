@@ -1,64 +1,41 @@
-name: RAMSQL isolated Linux loopback transport
+name: RAMSQL bounded receive on Linux socket maps
 on:
   push:
-    branches: [ci/transport-sockmap-ab-20261123]
+    branches: [ci/loopback-direct-receive-ab-20261123]
 permissions:
   actions: read
   contents: read
 jobs:
-  probe:
+  build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: SB0LTD/zpm
-          ref: d508a5602d788178ea0c893b23faa5697da7b7a2
-          path: .ci-runtime/probe-zpm
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Build the pure Sig socket-map probe
-        shell: bash
+      - name: Build the exact bounded receive candidate
+        run: python ci/bootstrap.py ramsql
+      - name: Verify the live recv syscall and shared-worker poll fallback
         run: |
-          set -euo pipefail
-          test "$(git -C .ci-runtime/probe-zpm rev-parse HEAD)" = d508a5602d788178ea0c893b23faa5697da7b7a2
-          python - <<'PY'
-          import sys
-          import tarfile
-          sys.path.insert(0, 'ci')
-          from bootstrap import RUNTIME, VERSIONS, download
-          for name, spec in (('sig-sdk', VERSIONS['sig']), ('ramsql-source', VERSIONS['ramsql'])):
-              with tarfile.open(download(spec, RUNTIME / f'{name}.tar')) as archive:
-                  archive.extractall(RUNTIME / name, filter='data')
-          PY
-          sdk=$(find "$PWD/.ci-runtime/sig-sdk" -type f -path '*/bin/sig')
-          source=$(find .ci-runtime/ramsql-source -mindepth 1 -maxdepth 1 -type d)
-          python "$source/tools/prepare_sig_runtime.py" --installed-lib "${sdk%/bin/sig}/lib" --output .ci-runtime/runtime
-          "$sdk" build-exe --zig-lib-dir "$PWD/.ci-runtime/runtime/lib" -O ReleaseFast --dep tcp_loopback -Mroot=.ci-runtime/probe-zpm/tools/tcp_loopback_probe.sig -Mtcp_loopback=.ci-runtime/probe-zpm/src/platform/tcp_loopback_linux.sig -femit-bin="$RUNNER_TEMP/tcp_loopback_probe"
-          python ci/loopback_transport.py "$RUNNER_TEMP/tcp_loopback_probe" "$RUNNER_TEMP/wire"
+          source=$(find .ci-runtime/source -mindepth 1 -maxdepth 1 -type d)
+          python "$source/tools/test_linux_direct_receive.py" --binary .ci-runtime/ramsql/bin/ramsql --report .ci-runtime/receive-proof.json
       - uses: actions/upload-artifact@v4
         with:
-          name: loopback-probe
+          name: ramsql-benchmark-binary
           path: |
-            ${{ runner.temp }}/tcp_loopback_probe
-            ${{ runner.temp }}/wire/
+            .ci-runtime/ramsql/bin/ramsql
+            .ci-runtime/ramsql-provenance.json
+            .ci-runtime/receive-proof.json
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: loopback-probe-failure
-          path: ${{ runner.temp }}/wire/
-          if-no-files-found: ignore
   paired:
-    needs: probe
+    needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        clients: [1, 8]
+        clients: [1]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -72,12 +49,12 @@ jobs:
         with:
           name: loopback-probe
           path: .ci-runtime/probe
+          run-id: 45219942496
+          github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
         with:
           name: ramsql-benchmark-binary
           path: .ci-runtime/downloaded-ramsql
-          run-id: 45180837749
-          github-token: ${{ github.token }}
       - name: Prepare the original JDBC workload and psql seed client
         run: |
           python - <<'PY'
@@ -102,6 +79,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: loopback-paired-${{ matrix.clients }}-clients
+          name: bounded-receive-paired-${{ matrix.clients }}-clients
           path: reports/live/size-scaling-1000000/
           if-no-files-found: warn
