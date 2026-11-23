@@ -487,8 +487,15 @@ def main():
     parser.add_argument('--suite', required=True, choices=('size-scaling', 'sales-subset', 'sales-full'))
     parser.add_argument('--profile', required=True, choices=PROFILES)
     parser.add_argument('--size-partition', type=int, choices=SIZE_PARTITIONS)
+    parser.add_argument('--lookup-clients', type=int, choices=(1, 8))
     args = parser.parse_args()
+    if args.lookup_clients is not None and (args.suite, args.profile, args.size_partition) != ('size-scaling', 'qualification', 1000000):
+        parser.error('Focused lookup evidence requires the original million-row qualification profile')
     campaign = Campaign(args.suite, args.profile, args.size_partition)
+    if args.lookup_clients is not None:
+        campaign.cases = [('s1000000_pk', args.lookup_clients)]
+        campaign.report.update(lookup_clients=args.lookup_clients,
+                               expected_cases=[f's1000000_pk/{args.lookup_clients}'])
     try:
         campaign.run()
     except BaseException as error:

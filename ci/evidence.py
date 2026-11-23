@@ -101,13 +101,19 @@ def read_run(folder, campaign, run):
                            for name, value in raw['scenarios'].items()})
 
 
-def summarize(folder):
+def summarize(folder, lookup_clients=None):
     campaign = json.loads((folder / 'campaign.json').read_text())
     suite = campaign['suite']
     if suite not in SUITES or campaign['profile'] not in PROFILES:
         raise ValueError('Unknown suite/profile')
     size_partition = campaign.get('size_partition')
     expected = {f'{name}/{clients}' for name, clients in cases(suite, size_partition)}
+    if lookup_clients is not None:
+        if (suite, campaign['profile'], size_partition) != ('size-scaling', 'qualification', 1000000) or lookup_clients not in (1, 8):
+            raise ValueError('Invalid focused lookup campaign')
+        if campaign.get('lookup_clients') != lookup_clients:
+            raise ValueError('Focused lookup does not match the scheduled client count')
+        expected = {f's1000000_pk/{lookup_clients}'}
     if set(campaign['expected_cases']) != expected or campaign['policy'] != PROFILES[campaign['profile']]:
         raise ValueError('Declared benchmark matrix/policy changed')
     issues = list(campaign.get('gaps', []))
@@ -210,12 +216,14 @@ def summarize(folder):
                                 and ram['min_qps'] > max(engines[e]['max_qps'] for e in ('postgres', 'irdb'))
                                 and all(ram['median_p99_us'] <= MAX_P99_RATIO * engines[e]['median_p99_us'] for e in ('postgres', 'irdb')))
         rows.append(row)
-    qualifies = campaign['profile'] == 'qualification' and not issues and all(row['advantage'] for row in rows)
+    thresholds_met = campaign['profile'] == 'qualification' and not issues and all(row['advantage'] for row in rows)
+    qualifies = lookup_clients is None and thresholds_met
     return dict(schema=1, suite=suite, profile=campaign['profile'], qualified=qualifies, size_partition=size_partition,
                 source_revision=campaign['ramsql']['source']['revision'], binary_sha256=campaign['ramsql']['binary_sha256'],
                 input_revision=campaign['input_revision'], ci=campaign.get('ci', {}), read_cache_bytes_requested=cache_request,
                 correctness_evidence_passed=not correctness_issues, correctness_issues=correctness_issues,
-                issues=sorted(set(issues)), rows=rows)
+                issues=sorted(set(issues)), rows=rows,
+                **({'lookup_threshold_met': thresholds_met} if lookup_clients is not None else {}))
 
 
 def markdown(summary):
@@ -283,6 +291,7 @@ def main():
     suite = sub.add_parser('suite')
     suite.add_argument('--suite', required=True, choices=SUITES)
     suite.add_argument('--size-partition', type=int, choices=SIZE_PARTITIONS)
+    suite.add_argument('--lookup-clients', type=int, choices=(1, 8))
     gate = sub.add_parser('gate')
     gate.add_argument('--root', type=Path, required=True)
     args = parser.parse_args()
@@ -290,7 +299,7 @@ def main():
         folder = ROOT / 'reports/live' / campaign_scope(args.suite, args.size_partition)
         folder.mkdir(parents=True, exist_ok=True)
         try:
-            summary = summarize(folder)
+            summary = summarize(folder, args.lookup_clients)
             if summary['suite'] != args.suite or summary['size_partition'] != args.size_partition:
                 raise ValueError('Evidence differs from the scheduled benchmark partition')
         except (OSError, ValueError, KeyError, TypeError) as error:
@@ -299,6 +308,10 @@ def main():
         passed = summary.get('correctness_evidence_passed') is True
         (folder / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
         text = markdown(summary)
+        if args.lookup_clients is not None:
+            passed = passed and summary.get('lookup_threshold_met') is True
+            outcome = 'met' if passed else 'missed'
+            text = f'# Original million-row lookup {outcome} the per-case thresholds\n\n' + text
         (folder / 'summary.md').write_text(text)
         publish(text)
         if not passed:
