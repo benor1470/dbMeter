@@ -2,7 +2,7 @@ name: Original JDBC compact reactor A/B
 
 on:
   push:
-    branches: [ci/compact-worker-poll-ab-20261123]
+    branches: [ci/skip-reader-wake-ab-20261123]
 
 permissions:
   contents: read
