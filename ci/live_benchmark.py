@@ -164,6 +164,8 @@ def fresh_seed(original, target):
 
 
 class Campaign:
+    worker_limit = 8
+
     def __init__(self, suite, profile, size_partition=None):
         revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
         ci_context = actions_context(revision)
@@ -254,7 +256,7 @@ class Campaign:
                 capabilities = json.loads(subprocess.check_output(
                     [str(self.binary), '--capabilities'], text=True, timeout=30))
                 banks, versions = ramsql_banks(self.suite, capabilities['tables'])
-                workers = min(8, len(os.sched_getaffinity(0)))
+                workers = min(self.worker_limit, len(os.sched_getaffinity(0)))
                 argv = [str(self.binary), '--serve', '--memory', '--insecure-local', '--port', str(self.port[engine]),
                         '--workers', str(workers), '--max-clients', '12', '--idle-ms', '300000',
                         '--table-rows', ','.join(map(str, banks)), '--table-versions', ','.join(map(str, versions)),

@@ -91,6 +91,8 @@ def profile(campaign, engine, child, client_count, perf, deployment):
                report=str((destination / 'local.json').relative_to(campaign.out)),
                host_before=before, host_after=host_snapshot())
     run['result'] = read_run(campaign.out, campaign.report, run)
+    if engine == 'ramsql':
+        run['workers'] = campaign.report['ramsql_machine_capacity']['read_workers']
     run['thread_deltas'] = thread_deltas(threads_before, threads_after)
     run['jdbc_thread_deltas'] = thread_deltas(jdbc_before, jdbc_after)
     run['sample_epoch_ns'] = [sample_start_ns, sample_end_ns]
@@ -125,7 +127,7 @@ def main(perf, probe):
         raise ValueError('Socket-map probe differs from the qualified artifact')
     campaign.report.update(diagnostic_only=True, merge_allowed=False, profiling_tool=Path(perf).name,
                            probe_sha256=probe_sha256,
-                           scope='CPU and scheduler samples for stock JDBC on PostgreSQL TCP, RAMSQL TCP and mapped RAMSQL on one host')
+                           scope='CPU and scheduler samples for the same published RAMSQL image with two reactor budgets')
     campaign.save()
     generator = campaign.folder / 'gen.py'
     if campaign.command('original-generator', [sys.executable, '-I', str(generator)]):
@@ -151,9 +153,17 @@ def main(perf, probe):
     with isolated_cgroup() as campaign.cgroup:
         campaign.report['loopback_wire_proof'] = verify(probe, campaign.cgroup, campaign.port['ramsql'],
                                                        ('duplex',), campaign.out)
-        for mapped, deployment in ((False, 'tcp'), (True, 'reply-cache')):
-            campaign.mapped = mapped
+        available = min(8, len(os.sched_getaffinity(0)))
+        if available < 4:
+            raise RuntimeError('A worker-budget comparison requires at least four available logical CPUs')
+        budgets = (available, max(2, available // 2), available)
+        campaign.mapped = True
+        for trial, workers in enumerate(budgets, 1):
+            deployment = f'reply-cache-{workers}-workers-{trial}'
+            campaign.worker_limit = workers
             with campaign.running('ramsql') as child:
+                if campaign.report['ramsql_machine_capacity']['read_workers'] != workers:
+                    raise RuntimeError('RAMSQL did not admit the requested worker budget')
                 for path in campaign.data_files:
                     campaign.psql(path)
                 name = f'{deployment}-profile-checks'
