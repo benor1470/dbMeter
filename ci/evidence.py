@@ -109,11 +109,12 @@ def summarize(folder, lookup_clients=None):
     size_partition = campaign.get('size_partition')
     expected = {f'{name}/{clients}' for name, clients in cases(suite, size_partition)}
     if lookup_clients is not None:
-        if (suite, campaign['profile'], size_partition) != ('size-scaling', 'qualification', 1000000) or lookup_clients not in (1, 8):
+        if (suite != 'size-scaling' or campaign['profile'] != 'qualification'
+                or size_partition not in SIZE_PARTITIONS or lookup_clients not in (1, 8)):
             raise ValueError('Invalid focused lookup campaign')
         if campaign.get('lookup_clients') != lookup_clients:
             raise ValueError('Focused lookup does not match the scheduled client count')
-        expected = {f's1000000_pk/{lookup_clients}'}
+        expected = {f's{size_partition}_pk/{lookup_clients}'}
     if set(campaign['expected_cases']) != expected or campaign['policy'] != PROFILES[campaign['profile']]:
         raise ValueError('Declared benchmark matrix/policy changed')
     issues = list(campaign.get('gaps', []))
@@ -234,6 +235,9 @@ def markdown(summary):
     if cache_request:
         outcome = 'passed' if summary['qualified'] else 'failed'
         status = f'Opt-in cache diagnostic ({cache_request:,} requested bytes). Formal advantage thresholds **{outcome}**.'
+        if 'lookup_threshold_met' in summary:
+            outcome = 'passed' if summary['lookup_threshold_met'] else 'failed'
+            status = f'Opt-in cache ({cache_request:,} requested bytes). Focused lookup thresholds **{outcome}**.'
     lines = [f"## Live {scope} — {summary['profile']}", '',
              status, '',
              'All rates are queries/transactions per second at the original JDBC boundary. Bold ratios highlight at least 2× measured leads, including limited leads that do not pass the full gate.', '',
@@ -311,7 +315,9 @@ def main():
         if args.lookup_clients is not None:
             passed = passed and summary.get('lookup_threshold_met') is True
             outcome = 'met' if passed else 'missed'
-            text = f'# Original million-row lookup {outcome} the per-case thresholds\n\n' + text
+            size = args.size_partition
+            scope = f'{size:,}-row' if size is not None else 'focused'
+            text = f'# Original {scope} lookup {outcome} the per-case thresholds\n\n' + text
         (folder / 'summary.md').write_text(text)
         publish(text)
         if not passed:

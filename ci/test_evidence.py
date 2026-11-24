@@ -70,18 +70,21 @@ class GateContracts(unittest.TestCase):
                     self.campaign['runs'].append(dict(engine=engine, case=f'{scenario}/{clients}', trial=trial, returncode=0, report=name))
 
     def test_focused_lookup_cannot_qualify_a_full_partition(self):
-        self.campaign.update(suite='size-scaling', size_partition=1000000, lookup_clients=1,
-                             expected_cases=['s1000000_pk/1'], runs=[], ramsql_capability_probes_passed=True)
         path = self.folder / 'campaign.json'
-        path.write_text(json.dumps(self.campaign))
-        with self.assertRaisesRegex(ValueError, 'matrix/policy changed'):
-            evidence.summarize(self.folder)
-        with self.assertRaisesRegex(ValueError, 'scheduled client count'):
-            evidence.summarize(self.folder, lookup_clients=8)
-        result = evidence.summarize(self.folder, lookup_clients=1)
-        self.assertFalse(result['qualified'])
-        self.assertFalse(result['lookup_threshold_met'])
-        self.assertEqual([row['case'] for row in result['rows']], ['s1000000_pk/1'])
+        for size in (100000, 1000000):
+            with self.subTest(size=size):
+                case = f's{size}_pk/1'
+                self.campaign.update(suite='size-scaling', size_partition=size, lookup_clients=1,
+                                     expected_cases=[case], runs=[], ramsql_capability_probes_passed=True)
+                path.write_text(json.dumps(self.campaign))
+                with self.assertRaisesRegex(ValueError, 'matrix/policy changed'):
+                    evidence.summarize(self.folder)
+                with self.assertRaisesRegex(ValueError, 'scheduled client count'):
+                    evidence.summarize(self.folder, lookup_clients=8)
+                result = evidence.summarize(self.folder, lookup_clients=1)
+                self.assertFalse(result['qualified'])
+                self.assertFalse(result['lookup_threshold_met'])
+                self.assertEqual([row['case'] for row in result['rows']], [case])
 
     def result(self):
         (self.folder / 'campaign.json').write_text(json.dumps(self.campaign))

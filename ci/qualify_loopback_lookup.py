@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import sys
 
-from bootstrap import ROOT, VERSIONS, digest
+from bootstrap import ROOT, SIZE_PARTITIONS, VERSIONS, digest
 from live_benchmark import Campaign
 from loopback_transport import attachment, isolated_cgroup, membership, verify
 
@@ -19,10 +19,11 @@ class LoopbackCampaign(Campaign):
             return
         source = 'live_size_scaling'
         indexed = source + '_clustered'
+        rows = self.report['size_partition']
         classpath = os.pathsep.join(str(ROOT / f'drivers/{name}') for name in
                                     ('jirdb-2025-02-02.jar', 'fastutil-8.5.15.jar'))
         command = ['java', '-cp', classpath, ROOT / 'ci/IrdbClusteredReference.java',
-                   str(self.port['irdb']), source, indexed]
+                   str(self.port['irdb']), source, indexed, str(rows)]
         with self.running('irdb'):
             if self.command('irdb-clustered-index-setup', command):
                 raise RuntimeError('Vendor clustered index setup failed')
@@ -32,7 +33,7 @@ class LoopbackCampaign(Campaign):
         if original.count(url + source) != 1:
             raise RuntimeError('Expected the original IRDB JDBC URL')
         config.write_text(original.replace(url + source, url + indexed))
-        self.report['irdb_reference'] = dict(clustered_index='t_1000000 (id)', database=indexed,
+        self.report['irdb_reference'] = dict(clustered_index=f't_{rows} (id)', database=indexed,
                                              settings=self.irdb_settings().splitlines(),
                                              setup_log='irdb-clustered-index-setup.log')
         # Verify the complete original correctness suite with the saved index
@@ -55,10 +56,12 @@ class LoopbackCampaign(Campaign):
             yield server
 
 
-def main(probe, clients):
+def main(probe, clients, rows=1000000):
     if clients not in (1, 8):
         raise ValueError('Expected an original lookup client count')
-    campaign = LoopbackCampaign('size-scaling', 'qualification', 1000000)
+    if rows not in SIZE_PARTITIONS:
+        raise ValueError('Expected an original size-scaling partition')
+    campaign = LoopbackCampaign('size-scaling', 'qualification', rows)
     spec = VERSIONS['ramsql']
     if campaign.ram_provenance['source'] != spec or digest(campaign.binary) != spec['release']['image_sha256']:
         raise ValueError('RAMSQL is not the exact binary from the qualified prerelease')
@@ -68,9 +71,10 @@ def main(probe, clients):
     probe_revision = probe.with_suffix('.revision').read_text().strip()
     if re.fullmatch(r'[0-9a-f]{40}', probe_revision) is None:
         raise ValueError('The socket-map artifact must record its exact ZPM source')
-    campaign.cases = [('s1000000_pk', clients)]
+    case = f's{rows}_pk'
+    campaign.cases = [(case, clients)]
     campaign.probe = probe
-    campaign.report.update(lookup_clients=clients, expected_cases=[f's1000000_pk/{clients}'],
+    campaign.report.update(lookup_clients=clients, expected_cases=[f'{case}/{clients}'],
                            deployment='RAMSQL Linux same-host indexed TCP socket map, manually enabled',
                            full_suite_merge_allowed=False,
                            probe_source=probe_revision,
@@ -89,4 +93,4 @@ def main(probe, clients):
 
 
 if __name__ == '__main__':
-    main(Path(sys.argv[1]).resolve(strict=True), int(sys.argv[2]))
+    main(Path(sys.argv[1]).resolve(strict=True), *(int(arg) for arg in sys.argv[2:]))
