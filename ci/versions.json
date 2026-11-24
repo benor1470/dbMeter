@@ -70,7 +70,7 @@
     "sha256": "188976721ead8e8627eb6d8389d500dccc0c9bebd885268a3047180274a6031e"
   },
   "fastutil": {
-    "url": "https://repo.maven.apache.org/maven2/it/unimi/dsi/fastutil/8.5.15/fastutil-8.5.15.jar",
+    "url": "https://maven-central.storage-download.googleapis.com/maven2/it/unimi/dsi/fastutil/8.5.15/fastutil-8.5.15.jar",
     "sha256": "cffeb6673bdf1e6e4377d684df2f55ac359cf5cf6df613e05e62deeea500936a"
   },
   "irdb_jdbc_sha256": "385c342151d42d6654e36796191987f50ac28a24fe261b28d3fd34e5a75b7838",
