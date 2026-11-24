@@ -9,9 +9,6 @@ from bootstrap import ROOT, VERSIONS, digest
 from live_benchmark import Campaign
 from loopback_transport import attachment, isolated_cgroup, membership, verify
 
-RAMSQL_SHA256 = 'ff25e9fab66c987a08edfdf8e4530c44b462a464c2126f188c0946cb9647733e'
-
-
 class LoopbackCampaign(Campaign):
     def irdb_settings(self):
         return 'nocache=false\nLogAll=false\n'
@@ -62,8 +59,9 @@ def main(probe, clients):
     if clients not in (1, 8):
         raise ValueError('Expected an original lookup client count')
     campaign = LoopbackCampaign('size-scaling', 'qualification', 1000000)
-    if campaign.ram_provenance['source'] != VERSIONS['ramsql'] or digest(campaign.binary) != RAMSQL_SHA256:
-        raise ValueError('RAMSQL is not the exact binary from the paired run')
+    spec = VERSIONS['ramsql']
+    if campaign.ram_provenance['source'] != spec or digest(campaign.binary) != spec['release']['image_sha256']:
+        raise ValueError('RAMSQL is not the exact binary from the qualified prerelease')
     probe_sha256 = probe.with_suffix('.sha256').read_text().strip()
     if digest(probe) != probe_sha256:
         raise ValueError('Socket-map probe differs from the portable build artifact')

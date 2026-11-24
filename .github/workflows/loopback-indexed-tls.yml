@@ -1,12 +1,12 @@
-name: Qualify reply caching for PostgreSQL TLS and original lookups
+name: Qualify the published RAMSQL binary for PostgreSQL TLS and original lookups
 on:
   push:
-    branches: [ci/reply-cache-qualification-20261124]
+    branches: [ci/published-reply-cache-20261124]
 permissions:
   contents: read
   actions: read
 env:
-  RAMSQL_REVISION: e1c1942aefbdb87262dd67370758b4f6e25442ae
+  RAMSQL_REVISION: 69a6ef6037c3afe658ee9ac0b4e09721fd0d7399
   ZPM_REVISION: 385d6708dfd03bf926fb92e826ebbf68fae611ab
 jobs:
   indexed-tls:
@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Build pinned RAMSQL and the pure Sig socket map
+      - name: Install the attested RAMSQL prerelease and build the pure Sig socket map
         shell: bash
         run: |
           set -euo pipefail
@@ -35,6 +35,7 @@ jobs:
           zpm="$PWD/.ci-runtime/probe-zpm"
           test "$(git -C "$source" rev-parse HEAD)" = "$RAMSQL_REVISION"
           test "$(git -C "$zpm" rev-parse HEAD)" = "$ZPM_REVISION"
+          python ci/bootstrap.py ramsql
           python - <<'PY'
           import sys
           import tarfile
@@ -46,14 +47,12 @@ jobs:
           sdk=$(find "$PWD/.ci-runtime/sdk" -type f -path '*/bin/sig')
           runtime="$PWD/.ci-runtime/runtime"
           python "$source/tools/prepare_sig_runtime.py" --installed-lib "${sdk%/bin/sig}/lib" --output "$runtime"
-          (cd "$source"; SIG_LIB_DIR="$runtime/lib" "$sdk" build -Doptimize=ReleaseFast \
-            -Dtarget=x86_64-linux-musl -Dlink-libc=false --prefix "$RUNNER_TEMP/ramsql")
           "$sdk" build-exe --zig-lib-dir "$runtime/lib" -target x86_64-linux-musl -mcpu=baseline -O ReleaseFast \
             --dep tcp_loopback "-Mroot=$zpm/tools/tcp_loopback_probe.sig" \
             "-Mtcp_loopback=$zpm/src/platform/tcp_loopback_linux.sig" -femit-bin="$RUNNER_TEMP/tcp_loopback_probe"
           mkdir "$RUNNER_TEMP/evidence"
           git -C "$zpm" rev-parse HEAD > "$RUNNER_TEMP/evidence/probe-zpm-revision"
-          sha256sum "$RUNNER_TEMP/ramsql/bin/ramsql" "$RUNNER_TEMP/tcp_loopback_probe" > "$RUNNER_TEMP/evidence/sha256sums"
+          sha256sum "$PWD/.ci-runtime/ramsql/bin/ramsql" "$RUNNER_TEMP/tcp_loopback_probe" > "$RUNNER_TEMP/evidence/sha256sums"
           cp "$RUNNER_TEMP/evidence/probe-zpm-revision" "$RUNNER_TEMP/tcp_loopback_probe.revision"
           sha256sum "$RUNNER_TEMP/tcp_loopback_probe" | cut -d ' ' -f 1 > "$RUNNER_TEMP/tcp_loopback_probe.sha256"
       - name: Require scoped redirection and stock TLS qualification
@@ -66,7 +65,7 @@ jobs:
           fi
           python -m pip install -r .ci-runtime/ramsql-source/tools/requirements-test.txt
           python ci/qualify_loopback_tls.py "$PWD/.ci-runtime/ramsql-source" \
-            "$RUNNER_TEMP/ramsql/bin/ramsql" "$RUNNER_TEMP/tcp_loopback_probe" "$RUNNER_TEMP"
+            "$PWD/.ci-runtime/ramsql/bin/ramsql" "$RUNNER_TEMP/tcp_loopback_probe" "$RUNNER_TEMP"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -79,6 +78,14 @@ jobs:
             ${{ runner.temp }}/tcp_loopback_probe
             ${{ runner.temp }}/tcp_loopback_probe.sha256
             ${{ runner.temp }}/tcp_loopback_probe.revision
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ramsql-benchmark-binary
+          path: |
+            .ci-runtime/ramsql/bin/ramsql
+            .ci-runtime/ramsql-provenance.json
+          include-hidden-files: true
           if-no-files-found: error
   primary-key:
     needs: indexed-tls
@@ -106,8 +113,6 @@ jobs:
         with:
           name: ramsql-benchmark-binary
           path: .ci-runtime/downloaded-ramsql
-          run-id: 45180837749
-          github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
         with:
           name: loopback-probe
