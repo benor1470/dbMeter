@@ -1,8 +1,8 @@
-name: Durable two packed 100M tables at 75 percent hash capacity
+name: Qualify the combined RAMSQL candidate with two durable 100M-row tables
 
 on:
   push:
-    branches: [bench/qualified-main-two-packed-100m-20261118]
+    branches: [ci/combined-two-packed-100m-20261124]
   workflow_dispatch:
     inputs:
       runner:
@@ -19,10 +19,10 @@ jobs:
     runs-on: ${{ inputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 180
     env:
-      PRODUCT_REVISION: 56305dcf6c783e2fccfd309f5c5c921d996ea8b2
-      PRODUCT_ARCHIVE_SHA256: be12446f3500eaa4bb1ac42dd7074b6e06b0d923e44544337488055a2c9a16b1
-      ZPM_REVISION: b72daae06f5bd475fb2f7ca0a3f20985bb5dc7dd
-      ZPM_ARCHIVE_SHA256: cbddaa6ecc419184cd6f62cd610b9930990bd88d9bde321e93b2aa72024e776f
+      PRODUCT_REVISION: cae7c8b99a6d81161d7ac537f66df47b8c35dcdf
+      PRODUCT_ARCHIVE_SHA256: 0a6135d93a7522e1e8c4f4ef03a0d35c3f68aea9be8dfe7b5ab2e7d5187a8b89
+      ZPM_REVISION: f1d282415f20210cd6f307068984782cb65d9491
+      ZPM_ARCHIVE_SHA256: 1c9d61e2171c4d851d698a2d18f343d75ea5dae6d6f254f49803409175e6dbc7
       FIXTURE_REVISION: bfdf49a4bf017f65d63590eb4aed0309d0874dce
       FIXTURE_ARCHIVE_SHA256: 7112f0f063e02a5474f7e14aa4bb81ba354d60ef5ed5d27831c3def85b446c8b
     steps:
@@ -93,9 +93,12 @@ jobs:
       - name: Build exact packed external storage variant
         run: |
           set -euo pipefail
+          build_flags=(-Doptimize=ReleaseSafe -Dintegral-version-banks=true -Dcompact-version-stamps=true
+                       -Dtables=32 -Dcolumns=9 -Dtext-bytes=200)
           "$SIG" version | tee evidence/sig-version.txt
-          (cd product; "$SIG" build -Doptimize=ReleaseSafe -Dintegral-version-banks=true -Dcompact-version-stamps=true) \
+          (cd product; "$SIG" build "${build_flags[@]}") \
             2>&1 | tee evidence/build.txt
+          printf '%s\n' "${build_flags[@]}" > evidence/build-flags.txt
           install -m 755 product/sig-out/bin/ramsql evidence/ramsql
           python product/tools/test_cli.py --binary "${{ github.workspace }}/evidence/ramsql" \
             --expect-integral-version-banks --expect-compact-version-stamps | tee evidence/cli.txt
@@ -120,7 +123,7 @@ jobs:
           result.update(zpm=zpm, binary_sha256=digest("evidence/ramsql"),
                         harness_sha256=digest(".github/fixtures/two_packed_tables.py"),
                         process_fixture_sha256=digest("fixture/tools/test_persistence.py"),
-                        flags=["-Doptimize=ReleaseSafe", "-Dintegral-version-banks=true", "-Dcompact-version-stamps=true"])
+                        flags=Path("evidence/build-flags.txt").read_text().splitlines())
           Path("evidence/provenance.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
           PY
       - name: Compare 50 and 75 percent plans with 100M rows in each bank
@@ -171,6 +174,18 @@ jobs:
           set -euo pipefail
           python .github/fixtures/two_packed_tables.py --binary evidence/ramsql --hash-load 75 --execute \
             --wal "$RUNNER_TEMP/two-packed-full.wal" --report evidence/full-stress.json
+      - name: Require the full 200M-row correctness and restart evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("evidence/full-stress.json")
+          if not path.exists():
+              raise SystemExit("The runner did not admit the full durable two-table load; see the capacity reports.")
+          report = json.loads(path.read_text())
+          assert report["rows_per_table"] == 100_000_000 and report["stress_passed"]
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
