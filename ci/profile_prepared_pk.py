@@ -55,6 +55,26 @@ def group_counters(pids):
     return {tid: counters for pid in pids for tid, counters in thread_counters(pid).items()}
 
 
+def reactor_affinity(server, workers, pin):
+    allowed = os.sched_getaffinity(server.pid)
+    task = Path('/proc') / str(server.pid) / 'task'
+    reactors = sorted(int(thread.name) for thread in task.iterdir() if int(thread.name) != server.pid)
+    if len(reactors) != workers or any(os.sched_getaffinity(tid) != allowed for tid in reactors):
+        raise RuntimeError('Unexpected worker topology on the fresh server')
+    if pin:
+        physical = {}
+        for cpu in sorted(allowed):
+            siblings = Path(f'/sys/devices/system/cpu/cpu{cpu}/topology/core_cpus_list').read_text().strip()
+            physical.setdefault(siblings, cpu)
+        if len(physical) < workers:
+            raise RuntimeError('Cannot place the reactors on distinct cores within the runner affinity')
+        for tid, cpu in zip(reactors, list(physical.values())[:workers], strict=True):
+            os.sched_setaffinity(tid, {cpu})
+            if os.sched_getaffinity(tid) != {cpu}:
+                raise RuntimeError('Linux did not apply the requested reactor affinity')
+    return {tid: sorted(os.sched_getaffinity(tid)) for tid in reactors}
+
+
 def profile(campaign, engine, child, client_count, perf, deployment):
     name = f'{engine}-{deployment}-s1000000_pk-{client_count}'
     destination = campaign.out / name
@@ -127,7 +147,7 @@ def main(perf, probe):
         raise ValueError('Socket-map probe differs from the qualified artifact')
     campaign.report.update(diagnostic_only=True, merge_allowed=False, profiling_tool=Path(perf).name,
                            probe_sha256=probe_sha256,
-                           scope='CPU and scheduler samples for the same published RAMSQL image with two reactor budgets')
+                           scope='CPU and scheduler samples for two reactors with and without distinct-core placement')
     campaign.save()
     generator = campaign.folder / 'gen.py'
     if campaign.command('original-generator', [sys.executable, '-I', str(generator)]):
@@ -153,17 +173,16 @@ def main(perf, probe):
     with isolated_cgroup() as campaign.cgroup:
         campaign.report['loopback_wire_proof'] = verify(probe, campaign.cgroup, campaign.port['ramsql'],
                                                        ('duplex',), campaign.out)
-        available = min(8, len(os.sched_getaffinity(0)))
-        if available < 4:
-            raise RuntimeError('A worker-budget comparison requires at least four available logical CPUs')
-        budgets = (available, max(2, available // 2), available)
+        workers = 2
+        campaign.worker_limit = workers
         campaign.mapped = True
-        for trial, workers in enumerate(budgets, 1):
-            deployment = f'reply-cache-{workers}-workers-{trial}'
-            campaign.worker_limit = workers
+        for trial, pin in enumerate((False, True, False), 1):
+            placement = 'separate-cores' if pin else 'automatic'
+            deployment = f'reply-cache-{placement}-{trial}'
             with campaign.running('ramsql') as child:
                 if campaign.report['ramsql_machine_capacity']['read_workers'] != workers:
                     raise RuntimeError('RAMSQL did not admit the requested worker budget')
+                affinity = reactor_affinity(child, workers, pin)
                 for path in campaign.data_files:
                     campaign.psql(path)
                 name = f'{deployment}-profile-checks'
@@ -171,7 +190,9 @@ def main(perf, probe):
                 if campaign.command(name, campaign.java('check', 'ramsql', ['--junit', str(checks)])):
                     raise RuntimeError('Original size-scaling correctness checks failed: ' + deployment)
                 check_xml(checks, required)
-                campaign.report['runs'].append(profile(campaign, 'ramsql', child, 8, perf, deployment))
+                run = profile(campaign, 'ramsql', child, 8, perf, deployment)
+                run['reactor_affinity'] = affinity
+                campaign.report['runs'].append(run)
                 campaign.save()
     campaign.report['completed'] = True
     campaign.save()

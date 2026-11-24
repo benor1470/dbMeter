@@ -1,7 +1,7 @@
-name: Measure the published reply cache at two reactor budgets on one runner
+name: Measure the published reply cache with per-core reactor affinity
 on:
   push:
-    branches: [ci/profile-loopback-workers-20261124]
+    branches: [ci/profile-loopback-affinity-20261124]
 permissions:
   contents: read
   actions: read
@@ -110,7 +110,7 @@ jobs:
           path: .ci-runtime/probe
       - name: Build the unchanged dbMeter JDBC workload
         run: sh build.sh
-      - name: Compare reactor budgets at eight clients
+      - name: Compare unpinned and per-core reactors at eight clients
         run: |
           set -euo pipefail
           chmod 755 .ci-runtime/probe/tcp_loopback_probe
