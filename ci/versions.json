@@ -8,7 +8,15 @@
       "archive_sha256": "0d4f426357861955c08eb8ca4aeabf75bb3ff675bd9e14a5b152d0411b6b61a7",
       "image_sha256": "6d9c645f190b388d05340292298ee10a3ccd7e94e0e1aba6231f76c7f496a670"
     },
-    "read_cache_bytes": 268435456
+    "read_cache_bytes": 268435456,
+    "integral_bank_words": {
+      "sales-full": [
+        0, 0, 0, 0, 0, 6, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0
+      ]
+    }
   },
   "ramsql_baseline": {
     "revision": "6c947808c11e4673029652d37fc214b1842974b0",

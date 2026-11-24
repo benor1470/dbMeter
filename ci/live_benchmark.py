@@ -313,7 +313,7 @@ class Campaign:
                 log.close()
 
     def irdb_settings(self):
-        return 'nocache=true\n'
+        return 'nocache=false\nLogAll=false\n'
 
     def prepare_configs(self):
         for engine in ENGINES:

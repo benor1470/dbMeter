@@ -1,6 +1,8 @@
 name: Live RAMSQL opt-in cache diagnostic
 
 on:
+  push:
+    branches: [ci/published-wide-full-suite-20261124]
   pull_request:
     types: [opened, synchronize, reopened, labeled]
     paths: ['.github/workflows/ramsql-live-benchmarks.yml', 'ci/**', '!ci/README.md']
@@ -66,6 +68,7 @@ jobs:
           path: |
             .ci-runtime/${{ matrix.variant == 'ramsql-baseline' && 'baseline-build/' || '' }}ramsql/bin/ramsql
             .ci-runtime/${{ matrix.variant == 'ramsql-baseline' && 'baseline-build/' || '' }}ramsql-provenance.json
+          include-hidden-files: true
           retention-days: 14
 
   benchmark:
@@ -78,7 +81,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.benchmark) }}
     env:
-      BENCHMARK_PROFILE: ${{ (github.event_name == 'pull_request' || inputs.qualification) && 'qualification' || 'smoke' }}
+      BENCHMARK_PROFILE: ${{ (github.event_name != 'workflow_dispatch' || inputs.qualification) && 'qualification' || 'smoke' }}
       BENCHMARK_SIZE_PARTITION: ${{ matrix.size_partition || '' }}
     steps:
       - uses: actions/checkout@v4
