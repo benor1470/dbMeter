@@ -60,8 +60,9 @@ def main(probe, clients):
         raise ValueError('Expected an original lookup client count')
     campaign = LoopbackCampaign('size-scaling', 'qualification', 1000000)
     spec = VERSIONS['ramsql']
-    if campaign.ram_provenance['source'] != spec or digest(campaign.binary) != spec['release']['image_sha256']:
-        raise ValueError('RAMSQL is not the exact binary from the qualified prerelease')
+    if (campaign.ram_provenance['source'] != spec or
+            campaign.ram_provenance['dependency_manifest_sha256'] != spec['dependency_manifest_sha256']):
+        raise ValueError('RAMSQL binary provenance does not match the pinned qualification build')
     probe_sha256 = probe.with_suffix('.sha256').read_text().strip()
     if digest(probe) != probe_sha256:
         raise ValueError('Socket-map probe differs from the portable build artifact')

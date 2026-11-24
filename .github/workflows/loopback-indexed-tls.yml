@@ -1,12 +1,12 @@
-name: Qualify the published RAMSQL binary for PostgreSQL TLS and original lookups
+name: Qualify the wider RAMSQL candidate for PostgreSQL TLS and original lookups
 on:
   push:
-    branches: [ci/published-reply-cache-20261124]
+    branches: [ci/wide-reply-cache-20261124]
 permissions:
   contents: read
   actions: read
 env:
-  RAMSQL_REVISION: 69a6ef6037c3afe658ee9ac0b4e09721fd0d7399
+  RAMSQL_REVISION: c793d3fcd832763f0741a61021e40892cb71f707
   ZPM_REVISION: 385d6708dfd03bf926fb92e826ebbf68fae611ab
 jobs:
   indexed-tls:
@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install the attested RAMSQL prerelease and build the pure Sig socket map
+      - name: Build the pinned hosted RAMSQL profile and the pure Sig socket map
         shell: bash
         run: |
           set -euo pipefail
@@ -36,17 +36,8 @@ jobs:
           test "$(git -C "$source" rev-parse HEAD)" = "$RAMSQL_REVISION"
           test "$(git -C "$zpm" rev-parse HEAD)" = "$ZPM_REVISION"
           python ci/bootstrap.py ramsql
-          python - <<'PY'
-          import sys
-          import tarfile
-          sys.path.insert(0, 'ci')
-          from bootstrap import RUNTIME, VERSIONS, download
-          with tarfile.open(download(VERSIONS['sig'], RUNTIME / 'sig.tar.xz')) as archive:
-              archive.extractall(RUNTIME / 'sdk', filter='data')
-          PY
           sdk=$(find "$PWD/.ci-runtime/sdk" -type f -path '*/bin/sig')
-          runtime="$PWD/.ci-runtime/runtime"
-          python "$source/tools/prepare_sig_runtime.py" --installed-lib "${sdk%/bin/sig}/lib" --output "$runtime"
+          runtime="$PWD/.ci-runtime/prepared-runtime"
           "$sdk" build-exe --zig-lib-dir "$runtime/lib" -target x86_64-linux-musl -mcpu=baseline -O ReleaseFast \
             --dep tcp_loopback "-Mroot=$zpm/tools/tcp_loopback_probe.sig" \
             "-Mtcp_loopback=$zpm/src/platform/tcp_loopback_linux.sig" -femit-bin="$RUNNER_TEMP/tcp_loopback_probe"
