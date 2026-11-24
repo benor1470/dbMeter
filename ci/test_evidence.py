@@ -154,6 +154,27 @@ class GateContracts(unittest.TestCase):
             self.campaign['ramsql']['binary_sha256'] = 'd' * 64
             self.assertIn('RAMSQL binary differs from pinned published release', self.result()['issues'])
 
+    def test_focused_lookup_can_select_a_separately_pinned_release(self):
+        self.campaign.update(suite='size-scaling', size_partition=1000000, lookup_clients=8,
+                             expected_cases=['s1000000_pk/8'], runs=[], ramsql_capability_probes_passed=True)
+        baseline = dict(revision='f' * 40, release={'image_sha256': 'e' * 64})
+        self.campaign['ramsql'].update(source=baseline, binary_sha256='e' * 64)
+        path = self.folder / 'campaign.json'
+        path.write_text(json.dumps(self.campaign))
+        with patch.dict(VERSIONS, ramsql_baseline=baseline):
+            with self.assertRaisesRegex(ValueError, 'focused lookup'):
+                evidence.summarize(self.folder, published_baseline=True)
+            source = evidence.summarize(self.folder, lookup_clients=8)
+            self.assertIn('RAMSQL source differs from pinned candidate', source['issues'])
+            release = evidence.summarize(self.folder, lookup_clients=8, published_baseline=True)
+            self.assertNotIn('RAMSQL source differs from pinned candidate', release['issues'])
+            self.assertNotIn('RAMSQL binary differs from pinned published release', release['issues'])
+            self.assertFalse(release['qualified'])
+            self.campaign['ramsql']['binary_sha256'] = 'd' * 64
+            path.write_text(json.dumps(self.campaign))
+            mismatch = evidence.summarize(self.folder, lookup_clients=8, published_baseline=True)
+            self.assertIn('RAMSQL binary differs from pinned published release', mismatch['issues'])
+
     def test_smoke_can_never_qualify(self):
         self.campaign.update(profile='smoke', policy=PROFILES['smoke'])
         self.assertFalse(self.result()['qualified'])

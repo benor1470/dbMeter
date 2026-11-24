@@ -101,7 +101,12 @@ def read_run(folder, campaign, run):
                            for name, value in raw['scenarios'].items()})
 
 
-def summarize(folder, lookup_clients=None):
+def summarize(folder, lookup_clients=None, *, published_baseline=False):
+    if published_baseline and lookup_clients is None:
+        raise ValueError('The published baseline is only selectable for a focused lookup')
+    source = VERSIONS['ramsql_baseline' if published_baseline else 'ramsql']
+    if published_baseline and not source.get('release'):
+        raise ValueError('No published baseline is pinned')
     campaign = json.loads((folder / 'campaign.json').read_text())
     suite = campaign['suite']
     if suite not in SUITES or campaign['profile'] not in PROFILES:
@@ -149,7 +154,6 @@ def summarize(folder, lookup_clients=None):
         check_original_inputs(campaign.get('original_input_sha256'))
     except ValueError as error:
         issues.append(str(error))
-    source = VERSIONS['ramsql']
     if campaign['ramsql']['source'] != source:
         issues.append('RAMSQL source differs from pinned candidate')
     manifest = source.get('dependency_manifest_sha256')
@@ -234,6 +238,9 @@ def markdown(summary):
     if cache_request:
         outcome = 'passed' if summary['qualified'] else 'failed'
         status = f'Opt-in cache diagnostic ({cache_request:,} requested bytes). Formal advantage thresholds **{outcome}**.'
+        if 'lookup_threshold_met' in summary:
+            outcome = 'passed' if summary['lookup_threshold_met'] else 'failed'
+            status = f'Opt-in cache ({cache_request:,} requested bytes). Focused lookup thresholds **{outcome}**.'
     lines = [f"## Live {scope} — {summary['profile']}", '',
              status, '',
              'All rates are queries/transactions per second at the original JDBC boundary. Bold ratios highlight at least 2× measured leads, including limited leads that do not pass the full gate.', '',
@@ -292,6 +299,7 @@ def main():
     suite.add_argument('--suite', required=True, choices=SUITES)
     suite.add_argument('--size-partition', type=int, choices=SIZE_PARTITIONS)
     suite.add_argument('--lookup-clients', type=int, choices=(1, 8))
+    suite.add_argument('--published-baseline', action='store_true')
     gate = sub.add_parser('gate')
     gate.add_argument('--root', type=Path, required=True)
     args = parser.parse_args()
@@ -299,7 +307,7 @@ def main():
         folder = ROOT / 'reports/live' / campaign_scope(args.suite, args.size_partition)
         folder.mkdir(parents=True, exist_ok=True)
         try:
-            summary = summarize(folder, args.lookup_clients)
+            summary = summarize(folder, args.lookup_clients, published_baseline=args.published_baseline)
             if summary['suite'] != args.suite or summary['size_partition'] != args.size_partition:
                 raise ValueError('Evidence differs from the scheduled benchmark partition')
         except (OSError, ValueError, KeyError, TypeError) as error:
