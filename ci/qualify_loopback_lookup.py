@@ -1,9 +1,11 @@
 """Run the original three-engine gate with an explicit, same-host Linux deployment."""
 from contextlib import contextmanager
+import os
 from pathlib import Path
+import re
 import sys
 
-from bootstrap import VERSIONS, digest
+from bootstrap import ROOT, VERSIONS, digest
 from live_benchmark import Campaign
 from loopback_transport import attachment, isolated_cgroup, membership, verify
 
@@ -11,6 +13,38 @@ RAMSQL_SHA256 = 'ff25e9fab66c987a08edfdf8e4530c44b462a464c2126f188c0946cb9647733
 
 
 class LoopbackCampaign(Campaign):
+    def irdb_settings(self):
+        return 'nocache=false\nLogAll=false\n'
+
+    def setup(self):
+        super().setup()
+        if not self.report['checks'].get('irdb'):
+            return
+        source = 'live_size_scaling'
+        indexed = source + '_clustered'
+        classpath = os.pathsep.join(str(ROOT / f'drivers/{name}') for name in
+                                    ('jirdb-2025-02-02.jar', 'fastutil-8.5.15.jar'))
+        command = ['java', '-cp', classpath, ROOT / 'ci/IrdbClusteredReference.java',
+                   str(self.port['irdb']), source, indexed]
+        with self.running('irdb'):
+            if self.command('irdb-clustered-index-setup', command):
+                raise RuntimeError('Vendor clustered index setup failed')
+        config = self.configs['irdb']
+        original = config.read_text()
+        url = f'jdbc:irdb://127.0.0.1:{self.port["irdb"]}/'
+        if original.count(url + source) != 1:
+            raise RuntimeError('Expected the original IRDB JDBC URL')
+        config.write_text(original.replace(url + source, url + indexed))
+        self.report['irdb_reference'] = dict(clustered_index='t_1000000 (id)', database=indexed,
+                                             settings=self.irdb_settings().splitlines(),
+                                             setup_log='irdb-clustered-index-setup.log')
+        # Verify the complete original correctness suite with the saved index
+        # after a server restart, as in each of the timed trials.
+        original_checks = self.out / 'irdb-checks.xml'
+        original_checks.rename(self.out / 'irdb-unindexed-checks.xml')
+        self.check_engine('irdb')
+        self.save()
+
     @contextmanager
     def running(self, engine):
         if engine != 'ramsql':
@@ -33,12 +67,15 @@ def main(probe, clients):
     probe_sha256 = probe.with_suffix('.sha256').read_text().strip()
     if digest(probe) != probe_sha256:
         raise ValueError('Socket-map probe differs from the portable build artifact')
+    probe_revision = probe.with_suffix('.revision').read_text().strip()
+    if re.fullmatch(r'[0-9a-f]{40}', probe_revision) is None:
+        raise ValueError('The socket-map artifact must record its exact ZPM source')
     campaign.cases = [('s1000000_pk', clients)]
     campaign.probe = probe
     campaign.report.update(lookup_clients=clients, expected_cases=[f's1000000_pk/{clients}'],
                            deployment='RAMSQL Linux same-host indexed TCP socket map, manually enabled',
                            full_suite_merge_allowed=False,
-                           probe_source='b3b1a2ea17cc347f909f164c4baa1440b304b077',
+                           probe_source=probe_revision,
                            probe_sha256=probe_sha256)
     campaign.save()
     try:
