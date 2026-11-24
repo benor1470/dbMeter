@@ -1,7 +1,7 @@
-name: Qualify the published wider RAMSQL binary for PostgreSQL TLS and original lookups
+name: Profile the published RAMSQL binary with and without the Linux reply cache
 on:
   push:
-    branches: [ci/published-wide-reply-cache-20261124]
+    branches: [ci/profile-published-loopback-20261124]
 permissions:
   contents: read
   actions: read
@@ -87,16 +87,10 @@ jobs:
             .ci-runtime/ramsql-provenance.json
           include-hidden-files: true
           if-no-files-found: error
-  primary-key:
+  profile:
     needs: indexed-tls
     runs-on: ubuntu-24.04
     timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        clients: [1, 8]
-    env:
-      LOOKUP_CLIENTS: ${{ matrix.clients }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -106,9 +100,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
       - uses: actions/download-artifact@v4
         with:
           name: ramsql-benchmark-binary
@@ -117,28 +108,22 @@ jobs:
         with:
           name: loopback-probe
           path: .ci-runtime/probe
-      - name: Restore the supplied private IRDB Java client
-        env:
-          IRDB_JDBC_PART_1: ${{ secrets.IRDB_JDBC_PART_1 }}
-          IRDB_JDBC_PART_2: ${{ secrets.IRDB_JDBC_PART_2 }}
-          IRDB_JDBC_PART_3: ${{ secrets.IRDB_JDBC_PART_3 }}
-          IRDB_JDBC_PART_4: ${{ secrets.IRDB_JDBC_PART_4 }}
-          IRDB_JDBC_PART_5: ${{ secrets.IRDB_JDBC_PART_5 }}
-        run: python ci/bootstrap.py dependencies
-      - name: Build the unchanged dbMeter and IRDB adapter
+      - name: Build the unchanged dbMeter JDBC workload
         run: sh build.sh
-      - name: Run the original JDBC case with the RAMSQL Linux loopback deployment
+      - name: Sample CPU and scheduler time at eight clients
         run: |
+          set -euo pipefail
           chmod 755 .ci-runtime/probe/tcp_loopback_probe
-          echo 'RAMSQL uses the indexed Linux socket map with bounded server reply caching for same-host peers only. PostgreSQL uses its original TCP deployment. IRDB uses the same JDBC path and the vendor clustered index on the lookup key. The lookup scoring rules are unchanged.' >> "$GITHUB_STEP_SUMMARY"
-          python ci/qualify_loopback_lookup.py .ci-runtime/probe/tcp_loopback_probe "$LOOKUP_CLIENTS"
-      - name: Score the original case and publish all timing results
-        if: always()
-        run: python ci/evidence.py suite --suite size-scaling --size-partition 1000000 --lookup-clients "$LOOKUP_CLIENTS"
+          sudo apt-get update -qq
+          sudo apt-get install -y linux-tools-generic
+          packages=$(dpkg-query -W -f='${binary:Package}\n' 'linux-tools-[0-9]*')
+          perf_binary=$(dpkg-query -L $packages | awk '/^\/usr\/lib\/.*\/perf$/ {print}' | sort -V | tail -n 1)
+          test -x "$perf_binary"
+          python ci/profile_prepared_pk.py "$perf_binary" .ci-runtime/probe/tcp_loopback_probe
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: clustered-irdb-million-row-lookup-${{ matrix.clients }}-clients
+          name: published-lookup-cpu-scheduler-profile
           path: reports/live/size-scaling-1000000/
           if-no-files-found: error
           retention-days: 30
