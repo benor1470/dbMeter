@@ -1,0 +1,56 @@
+name: Verify archived eight-client source and release lookup trials
+on:
+  push:
+    branches: [ci/rescore-paired-lookup-20261124]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  score:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: same-host-source-and-release-lookup-8-clients
+          run-id: 45451776681
+          github-token: ${{ github.token }}
+          path: archive
+      - name: Score both original trial sets against their separate provenance pins
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, "ci")
+          import evidence
+
+          scores = Path("verified")
+          scores.mkdir()
+          passed = True
+          for kind in ("source", "published"):
+              folder = Path("archive/paired") / kind
+              campaign = json.loads((folder / "campaign.json").read_text())
+              context = campaign["ci"]
+              if (context["run_id"], context["run_attempt"], campaign["input_revision"]) != (
+                  "45451776681", "1", "2c83c73f9b56cc0d68ff95fc8947452a6ee85397"
+              ):
+                  raise ValueError("Unexpected benchmark run, attempt or checkout")
+              summary = evidence.summarize(folder, lookup_clients=8, published_baseline=kind == "published")
+              (scores / f"{kind}.json").write_text(json.dumps(summary, indent=2) + "\n")
+              report = f"# {kind.title()} RAMSQL image\n\n" + evidence.markdown(summary)
+              (scores / f"{kind}.md").write_text(report)
+              evidence.publish(report)
+              passed = passed and summary["correctness_evidence_passed"] and summary["lookup_threshold_met"]
+          if not passed:
+              raise SystemExit(1)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verified-source-and-published-lookup-gates
+          path: verified/
+          if-no-files-found: error
