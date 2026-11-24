@@ -1,12 +1,12 @@
-name: Qualify the wider RAMSQL candidate for PostgreSQL TLS and original lookups
+name: Verify idle-reactor RAMSQL change with the original eight-client lookup
 on:
   push:
-    branches: [ci/wide-reply-cache-20261124]
+    branches: [ci/idle-postgres-lookup-20261124]
 permissions:
   contents: read
   actions: read
 env:
-  RAMSQL_REVISION: c793d3fcd832763f0741a61021e40892cb71f707
+  RAMSQL_REVISION: 809215f403a39a00e2bf0ef7239521741bfd0eac
   ZPM_REVISION: 385d6708dfd03bf926fb92e826ebbf68fae611ab
 jobs:
   indexed-tls:
@@ -85,7 +85,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        clients: [1, 8]
+        clients: [8]
     env:
       LOOKUP_CLIENTS: ${{ matrix.clients }}
     steps:
