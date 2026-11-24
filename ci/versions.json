@@ -1,63 +1,29 @@
 {
   "ramsql": {
-    "revision": "c793d3fcd832763f0741a61021e40892cb71f707",
-    "release": {
-      "tag": "ci-v0.3.0-beta.3-run.45388930619.1",
-      "version": "0.3.0-beta.3",
-      "manifest_sha256": "32eca4f4640013a838e890b68d560f4cb41775287568c8fe7099a1fdb45f0810",
-      "archive_sha256": "0d4f426357861955c08eb8ca4aeabf75bb3ff675bd9e14a5b152d0411b6b61a7",
-      "image_sha256": "6d9c645f190b388d05340292298ee10a3ccd7e94e0e1aba6231f76c7f496a670"
-    },
-    "read_cache_bytes": 268435456
-  },
-  "ramsql_baseline": {
-    "revision": "6c947808c11e4673029652d37fc214b1842974b0",
-    "url": "https://codeload.github.com/SB0LTD/ramsql/tar.gz/6c947808c11e4673029652d37fc214b1842974b0",
-    "sha256": "f1afe0a8a79425c00260bcce96e6c5c9f7ab9b113741c1ac3683f5bea97c47ed",
+    "revision": "809215f403a39a00e2bf0ef7239521741bfd0eac",
+    "url": "https://codeload.github.com/SB0LTD/ramsql/tar.gz/809215f403a39a00e2bf0ef7239521741bfd0eac",
+    "sha256": "3bb9a1ac4d9cda1c650712843f790384fde371e2c02acdb9ba4b21e872ff0266",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
       "text-bytes": 200,
       "integral-version-banks": true
     },
-    "integral_bank_words": {
-      "sales-full": [
-        0,
-        0,
-        0,
-        0,
-        0,
-        6,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-      ]
+    "read_cache_bytes": 268435456,
+    "dependency_manifest_sha256": "a5f764fee6c18f9e8e74c08036e811ad05109fa2cd6a01bf91733807e8f06e62"
+  },
+  "ramsql_baseline": {
+    "revision": "cae7c8b99a6d81161d7ac537f66df47b8c35dcdf",
+    "url": "https://codeload.github.com/SB0LTD/ramsql/tar.gz/cae7c8b99a6d81161d7ac537f66df47b8c35dcdf",
+    "sha256": "0a6135d93a7522e1e8c4f4ef03a0d35c3f68aea9be8dfe7b5ab2e7d5187a8b89",
+    "capacity_profile": {
+      "tables": 32,
+      "columns": 9,
+      "text-bytes": 200,
+      "integral-version-banks": true
     },
-    "dependency_manifest_sha256": "9e51abd8b77342304edec5d0778cc897dd74bc720c4210dd22a28e660a01af7d",
-    "read_cache_bytes": 268435456
+    "read_cache_bytes": 268435456,
+    "dependency_manifest_sha256": "a5f764fee6c18f9e8e74c08036e811ad05109fa2cd6a01bf91733807e8f06e62"
   },
   "sig": {
     "url": "https://github.com/SB0LTD/sig/releases/download/sig-0.6.5-zig0.17.0.3c72687/sig-0.6.5-zig0.17.0.3c72687-x86_64-linux.tar.xz",

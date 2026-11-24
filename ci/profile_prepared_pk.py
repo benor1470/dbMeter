@@ -1,5 +1,4 @@
-"""Profile RAMSQL and native PostgreSQL with stock JDBC on the same runner."""
-from contextlib import contextmanager
+"""Profile two exact RAMSQL reactor revisions with stock JDBC on one runner."""
 import json
 import os
 from pathlib import Path
@@ -8,10 +7,8 @@ import sys
 import time
 
 from bootstrap import ROOT, RUNTIME, VERSIONS, digest, download
-from evidence import CAPABILITY_CHECKS, check_xml, read_run
+from evidence import check_xml, read_run
 from live_benchmark import Campaign, SIZES, original_inputs
-from loopback_transport import isolated_cgroup, verify
-from qualify_loopback_lookup import LoopbackCampaign
 from runner import host_snapshot
 
 
@@ -41,44 +38,10 @@ def thread_deltas(before, after):
             for tid, counters in after.items() if tid in before}
 
 
-def server_pids(campaign, engine, child):
-    if engine == 'ramsql':
-        return [child.pid]
-    rows = subprocess.check_output(['docker', 'top', campaign.container, '-eo', 'pid'], text=True, timeout=10)
-    pids = [int(row.strip()) for row in rows.splitlines()[1:]]
-    if len(pids) < 2:
-        raise RuntimeError('Native PostgreSQL process set was incomplete')
-    return pids
-
-
-def group_counters(pids):
-    return {tid: counters for pid in pids for tid, counters in thread_counters(pid).items()}
-
-
-def reactor_affinity(server, workers, pin):
-    allowed = os.sched_getaffinity(server.pid)
-    task = Path('/proc') / str(server.pid) / 'task'
-    reactors = sorted(int(thread.name) for thread in task.iterdir() if int(thread.name) != server.pid)
-    if len(reactors) != workers or any(os.sched_getaffinity(tid) != allowed for tid in reactors):
-        raise RuntimeError('Unexpected worker topology on the fresh server')
-    if pin:
-        physical = {}
-        for cpu in sorted(allowed):
-            siblings = Path(f'/sys/devices/system/cpu/cpu{cpu}/topology/core_cpus_list').read_text().strip()
-            physical.setdefault(siblings, cpu)
-        if len(physical) < workers:
-            raise RuntimeError('Cannot place the reactors on distinct cores within the runner affinity')
-        for tid, cpu in zip(reactors, list(physical.values())[:workers], strict=True):
-            os.sched_setaffinity(tid, {cpu})
-            if os.sched_getaffinity(tid) != {cpu}:
-                raise RuntimeError('Linux did not apply the requested reactor affinity')
-    return {tid: sorted(os.sched_getaffinity(tid)) for tid in reactors}
-
-
-def profile(campaign, engine, child, client_count, perf, deployment):
-    name = f'{engine}-{deployment}-s1000000_pk-{client_count}'
+def profile(campaign, child, perf, variant, trial):
+    name = f'{variant}-{trial}-s1000000_pk-8'
     destination = campaign.out / name
-    argv = campaign.java('load', engine, ['--only', 's1000000_pk', '--set', f'load.threads={client_count}',
+    argv = campaign.java('load', 'ramsql', ['--only', 's1000000_pk', '--set', 'load.threads=8',
         '--set', 'load.rampUp=5s', '--set', 'load.warmup=15s', '--set', 'load.duration=60s',
         '--node', 'local', '--run-id', name, '--out', str(destination)])
     before = host_snapshot()
@@ -91,15 +54,14 @@ def profile(campaign, engine, child, client_count, perf, deployment):
                 time.sleep(25)
                 if load.poll() is not None:
                     raise RuntimeError('JDBC load ended before CPU sampling')
-                pids = server_pids(campaign, engine, child)
-                threads_before = group_counters(pids)
+                threads_before = thread_counters(child.pid)
                 jdbc_before = thread_counters(load.pid)
                 sample_start_ns = time.time_ns()
                 subprocess.run(['sudo', perf, 'record', '--quiet', '--event', 'cpu-clock', '--freq', '199',
-                    '--call-graph', 'dwarf,4096', '--pid', ','.join(map(str, [*pids, load.pid])), '--output', str(trace),
+                    '--call-graph', 'dwarf,4096', '--pid', f'{child.pid},{load.pid}', '--output', str(trace),
                     '--', 'sleep', '30'], stdout=perf_log, stderr=subprocess.STDOUT, check=True, timeout=45)
                 sample_end_ns = time.time_ns()
-                threads_after = group_counters(pids)
+                threads_after = thread_counters(child.pid)
                 jdbc_after = thread_counters(load.pid)
                 if load.poll() is not None:
                     raise RuntimeError('JDBC load ended before the sample interval completed')
@@ -107,12 +69,11 @@ def profile(campaign, engine, child, client_count, perf, deployment):
             finally:
                 if load.poll() is None:
                     load.kill()
-    run = dict(engine=engine, deployment=deployment, case=f's1000000_pk/{client_count}', returncode=returncode,
+    run = dict(engine='ramsql', variant=variant, trial=trial, case='s1000000_pk/8', returncode=returncode,
                report=str((destination / 'local.json').relative_to(campaign.out)),
                host_before=before, host_after=host_snapshot())
     run['result'] = read_run(campaign.out, campaign.report, run)
-    if engine == 'ramsql':
-        run['workers'] = campaign.report['ramsql_machine_capacity']['read_workers']
+    run['workers'] = campaign.report['ramsql_machine_capacity']['read_workers']
     run['thread_deltas'] = thread_deltas(threads_before, threads_after)
     run['jdbc_thread_deltas'] = thread_deltas(jdbc_before, jdbc_after)
     run['sample_epoch_ns'] = [sample_start_ns, sample_end_ns]
@@ -124,79 +85,52 @@ def profile(campaign, engine, child, client_count, perf, deployment):
     return run
 
 
-class ProfileCampaign(LoopbackCampaign):
-    mapped = False
-
-    @contextmanager
-    def running(self, engine):
-        selected = super().running(engine) if self.mapped else Campaign.running(self, engine)
-        with selected as server:
-            yield server
-
-
-def main(perf, probe):
-    pg_driver = download(VERSIONS['postgres_jdbc'], ROOT / 'drivers/postgresql-42.7.4.jar')
-    (RUNTIME / 'dependencies.json').write_text(json.dumps({'postgres_jdbc_sha256': digest(pg_driver)}))
-    campaign = ProfileCampaign('size-scaling', 'qualification', 1000000)
-    if (campaign.ram_provenance['source'] != VERSIONS['ramsql'] or
-            digest(campaign.binary) != VERSIONS['ramsql']['release']['image_sha256']):
-        raise ValueError('The profile requires the exact published RAMSQL binary')
-    campaign.probe = probe
-    probe_sha256 = probe.with_suffix('.sha256').read_text().strip()
-    if digest(probe) != probe_sha256:
-        raise ValueError('Socket-map probe differs from the qualified artifact')
-    campaign.report.update(diagnostic_only=True, merge_allowed=False, profiling_tool=Path(perf).name,
-                           probe_sha256=probe_sha256,
-                           scope='CPU and scheduler samples for two reactors with and without distinct-core placement')
+def main(perf):
+    driver = download(VERSIONS['postgres_jdbc'], ROOT / 'drivers/postgresql-42.7.4.jar')
+    (RUNTIME / 'dependencies.json').write_text(json.dumps({'postgres_jdbc_sha256': digest(driver)}))
+    campaign = Campaign('size-scaling', 'qualification', 1000000)
+    baseline = RUNTIME / 'baseline-build'
+    binaries = {'candidate': campaign.binary, 'baseline': baseline / 'ramsql/bin/ramsql'}
+    provenance = {'candidate': campaign.ram_provenance,
+                  'baseline': json.loads((baseline / 'ramsql-provenance.json').read_text())}
+    for label, spec in (('candidate', 'ramsql'), ('baseline', 'ramsql_baseline')):
+        expected = VERSIONS[spec]
+        record = provenance[label]
+        if (record['source'] != expected or record['binary_sha256'] != digest(binaries[label]) or
+                record['dependency_manifest_sha256'] != expected['dependency_manifest_sha256']):
+            raise ValueError(f'{label} artifact differs from its exact pin')
+    for field in ('build_arguments', 'runtime_preparation', 'dependency_manifest_sha256'):
+        if provenance['candidate'][field] != provenance['baseline'][field]:
+            raise ValueError(f'Unpaired RAMSQL build setting: {field}')
+    campaign.report.update(diagnostic_only=True, merge_allowed=False, variants=provenance,
+                           scope='Paired plaintext TCP profile of idle-reactor servicing')
     campaign.save()
-    generator = campaign.folder / 'gen.py'
-    if campaign.command('original-generator', [sys.executable, '-I', str(generator)]):
+    if campaign.command('original-generator', [sys.executable, '-I', str(campaign.folder / 'gen.py')]):
         raise RuntimeError('Original size-scaling generator failed')
     campaign.prepare_configs()
     campaign.report['original_input_sha256'] = original_inputs()
-    subprocess.run(['docker', 'pull', VERSIONS['postgres_image']], check=True, timeout=180)
-    required = {f's{size}_{kind}' for size in SIZES for kind in ('a_pk', 'b_filter', 'c_topn', 'd_last')}
-    with campaign.running('postgres'):
-        checks = campaign.out / 'postgres-checks.xml'
-        command = campaign.java('check', 'postgres', ['--junit', str(checks)])
-        command.remove('--skip-setup')
-        if campaign.command('postgres-checks', command):
-            raise RuntimeError('Original native PostgreSQL correctness checks failed')
-        check_xml(checks, required | CAPABILITY_CHECKS)
-        campaign.report['runs'].append(profile(campaign, 'postgres', None, 8, perf, 'tcp'))
-        campaign.save()
     campaign.data_files = [ROOT / f'build/size-scaling/ramsql_load_t_{size}.sql' for size in SIZES]
-    campaign.check_engine('ramsql')
-    campaign.save()
-    check_xml(campaign.out / 'ramsql-checks.xml', required)
-    check_xml(campaign.out / 'ramsql-capabilities.xml', CAPABILITY_CHECKS)
-    with isolated_cgroup() as campaign.cgroup:
-        campaign.report['loopback_wire_proof'] = verify(probe, campaign.cgroup, campaign.port['ramsql'],
-                                                       ('duplex',), campaign.out)
-        workers = 2
-        campaign.worker_limit = workers
-        campaign.mapped = True
-        for trial, pin in enumerate((False, True, False), 1):
-            placement = 'separate-cores' if pin else 'automatic'
-            deployment = f'reply-cache-{placement}-{trial}'
-            with campaign.running('ramsql') as child:
-                if campaign.report['ramsql_machine_capacity']['read_workers'] != workers:
-                    raise RuntimeError('RAMSQL did not admit the requested worker budget')
-                affinity = reactor_affinity(child, workers, pin)
-                for path in campaign.data_files:
-                    campaign.psql(path)
-                name = f'{deployment}-profile-checks'
-                checks = campaign.out / (name + '.xml')
-                if campaign.command(name, campaign.java('check', 'ramsql', ['--junit', str(checks)])):
-                    raise RuntimeError('Original size-scaling correctness checks failed: ' + deployment)
-                check_xml(checks, required)
-                run = profile(campaign, 'ramsql', child, 8, perf, deployment)
-                run['reactor_affinity'] = affinity
-                campaign.report['runs'].append(run)
-                campaign.save()
+    required = {f's{size}_{kind}' for size in SIZES for kind in ('a_pk', 'b_filter', 'c_topn', 'd_last')}
+    workers = min(campaign.worker_limit, len(os.sched_getaffinity(0)))
+    if workers < 2:
+        raise RuntimeError('Paired profiling requires parallel reactors')
+    for trial, label in enumerate(('baseline', 'candidate', 'candidate', 'baseline'), 1):
+        campaign.binary = binaries[label]
+        with campaign.running('ramsql') as child:
+            if campaign.report['ramsql_machine_capacity']['read_workers'] != workers:
+                raise RuntimeError('RAMSQL did not admit the shared worker budget')
+            for path in campaign.data_files:
+                campaign.psql(path)
+            name = f'{label}-{trial}-checks'
+            checks = campaign.out / (name + '.xml')
+            if campaign.command(name, campaign.java('check', 'ramsql', ['--junit', str(checks)])):
+                raise RuntimeError(f'Original size-scaling correctness checks failed for {label}')
+            check_xml(checks, required)
+            campaign.report['runs'].append(profile(campaign, child, perf, label, trial))
+            campaign.save()
     campaign.report['completed'] = True
     campaign.save()
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], Path(sys.argv[2]).resolve(strict=True))
+    main(sys.argv[1])
