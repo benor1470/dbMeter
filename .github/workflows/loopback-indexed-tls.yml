@@ -1,12 +1,12 @@
-name: Qualify the published RAMSQL binary for PostgreSQL TLS and original lookups
+name: Qualify the published wider RAMSQL binary for PostgreSQL TLS and original lookups
 on:
   push:
-    branches: [ci/published-reply-cache-20261124]
+    branches: [ci/published-wide-reply-cache-20261124]
 permissions:
   contents: read
   actions: read
 env:
-  RAMSQL_REVISION: 69a6ef6037c3afe658ee9ac0b4e09721fd0d7399
+  RAMSQL_REVISION: c793d3fcd832763f0741a61021e40892cb71f707
   ZPM_REVISION: 385d6708dfd03bf926fb92e826ebbf68fae611ab
 jobs:
   indexed-tls:

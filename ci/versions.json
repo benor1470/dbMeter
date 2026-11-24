@@ -1,12 +1,12 @@
 {
   "ramsql": {
-    "revision": "69a6ef6037c3afe658ee9ac0b4e09721fd0d7399",
+    "revision": "c793d3fcd832763f0741a61021e40892cb71f707",
     "release": {
-      "tag": "ci-v0.3.0-beta.3-run.45268487374.1",
+      "tag": "ci-v0.3.0-beta.3-run.45388930619.1",
       "version": "0.3.0-beta.3",
-      "manifest_sha256": "09dd4d806d48bbc60475a1b865303a871e87b1fb98c291f54d7ba6963351f49a",
-      "archive_sha256": "b227cc0c5975899236331144ec000379a396955b2977682702582727549a732b",
-      "image_sha256": "7fbf2d5060b9610c75f72d160e24788237206d563e7bb02b0450f15eddbe89e6"
+      "manifest_sha256": "32eca4f4640013a838e890b68d560f4cb41775287568c8fe7099a1fdb45f0810",
+      "archive_sha256": "0d4f426357861955c08eb8ca4aeabf75bb3ff675bd9e14a5b152d0411b6b61a7",
+      "image_sha256": "6d9c645f190b388d05340292298ee10a3ccd7e94e0e1aba6231f76c7f496a670"
     },
     "read_cache_bytes": 268435456
   },
