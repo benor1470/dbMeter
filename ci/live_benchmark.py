@@ -293,7 +293,7 @@ class Campaign:
                 ini = self.work / 'irdb.ini'
                 # Fresh synthetic CI data and vendor's public default lab
                 # password; never copy the reviewer's supplied private INI.
-                ini.write_text('[general]\ndata_dir=' + (self.work / 'irdb-data').as_posix() + '\nport=' + str(self.port[engine]) + '\npassword=!TopSecret\nlog_dir=' + (self.work / 'irdb-logs').as_posix() + '\nnocache=true\n')
+                ini.write_text('[general]\ndata_dir=' + (self.work / 'irdb-data').as_posix() + '\nport=' + str(self.port[engine]) + '\npassword=!TopSecret\nlog_dir=' + (self.work / 'irdb-logs').as_posix() + '\n' + self.irdb_settings())
                 (self.work / 'irdb-data').mkdir(exist_ok=True)
                 (self.work / 'irdb-logs').mkdir(exist_ok=True)
                 argv = ['dotnet', str(server), str(ini)]
@@ -311,6 +311,9 @@ class Campaign:
                         child.kill()
                         child.wait(timeout=15)
                 log.close()
+
+    def irdb_settings(self):
+        return 'nocache=true\n'
 
     def prepare_configs(self):
         for engine in ENGINES:
