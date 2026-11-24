@@ -13,52 +13,14 @@
     "dependency_manifest_sha256": "9f25a0ae5edc93fccb70219f0d764a305e0c34658a999c5d00aae314aa76e4ed"
   },
   "ramsql_baseline": {
-    "revision": "6c947808c11e4673029652d37fc214b1842974b0",
-    "url": "https://codeload.github.com/SB0LTD/ramsql/tar.gz/6c947808c11e4673029652d37fc214b1842974b0",
-    "sha256": "f1afe0a8a79425c00260bcce96e6c5c9f7ab9b113741c1ac3683f5bea97c47ed",
-    "capacity_profile": {
-      "tables": 32,
-      "columns": 9,
-      "text-bytes": 200,
-      "integral-version-banks": true
+    "revision": "c793d3fcd832763f0741a61021e40892cb71f707",
+    "release": {
+      "tag": "ci-v0.3.0-beta.3-run.45388930619.1",
+      "version": "0.3.0-beta.3",
+      "manifest_sha256": "32eca4f4640013a838e890b68d560f4cb41775287568c8fe7099a1fdb45f0810",
+      "archive_sha256": "0d4f426357861955c08eb8ca4aeabf75bb3ff675bd9e14a5b152d0411b6b61a7",
+      "image_sha256": "6d9c645f190b388d05340292298ee10a3ccd7e94e0e1aba6231f76c7f496a670"
     },
-    "integral_bank_words": {
-      "sales-full": [
-        0,
-        0,
-        0,
-        0,
-        0,
-        6,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    "dependency_manifest_sha256": "9e51abd8b77342304edec5d0778cc897dd74bc720c4210dd22a28e660a01af7d",
     "read_cache_bytes": 268435456
   },
   "sig": {

@@ -55,14 +55,18 @@ class LoopbackCampaign(Campaign):
             yield server
 
 
-def main(probe, clients):
+def main(probe, clients, published=False):
     if clients not in (1, 8):
         raise ValueError('Expected an original lookup client count')
     campaign = LoopbackCampaign('size-scaling', 'qualification', 1000000)
-    spec = VERSIONS['ramsql']
-    if (campaign.ram_provenance['source'] != spec or
-            campaign.ram_provenance['dependency_manifest_sha256'] != spec['dependency_manifest_sha256']):
+    spec = VERSIONS['ramsql_baseline' if published else 'ramsql']
+    if campaign.ram_provenance['source'] != spec:
         raise ValueError('RAMSQL binary provenance does not match the pinned qualification build')
+    if published:
+        if digest(campaign.binary) != spec['release']['image_sha256']:
+            raise ValueError('RAMSQL image differs from the published release evidence')
+    elif campaign.ram_provenance['dependency_manifest_sha256'] != spec['dependency_manifest_sha256']:
+        raise ValueError('RAMSQL dependency manifest differs from the pinned source')
     probe_sha256 = probe.with_suffix('.sha256').read_text().strip()
     if digest(probe) != probe_sha256:
         raise ValueError('Socket-map probe differs from the portable build artifact')
@@ -90,4 +94,6 @@ def main(probe, clients):
 
 
 if __name__ == '__main__':
-    main(Path(sys.argv[1]).resolve(strict=True), int(sys.argv[2]))
+    if sys.argv[3:] not in ([], ['published']):
+        raise SystemExit('Expected an optional published image selector')
+    main(Path(sys.argv[1]).resolve(strict=True), int(sys.argv[2]), published=bool(sys.argv[3:]))

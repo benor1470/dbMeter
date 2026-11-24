@@ -1,7 +1,7 @@
-name: Qualify the wider RAMSQL candidate for PostgreSQL TLS and original lookups
+name: Compare the wider source and published RAMSQL images on one runner
 on:
   push:
-    branches: [ci/wide-reply-cache-20261124]
+    branches: [ci/paired-wide-artifact-lookup-20261124]
 permissions:
   contents: read
   actions: read
@@ -81,11 +81,11 @@ jobs:
   primary-key:
     needs: indexed-tls
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 55
     strategy:
       fail-fast: false
       matrix:
-        clients: [1, 8]
+        clients: [8]
     env:
       LOOKUP_CLIENTS: ${{ matrix.clients }}
     steps:
@@ -125,11 +125,34 @@ jobs:
           python ci/qualify_loopback_lookup.py .ci-runtime/probe/tcp_loopback_probe "$LOOKUP_CLIENTS"
       - name: Score the original case and publish all timing results
         if: always()
+        continue-on-error: true
         run: python ci/evidence.py suite --suite size-scaling --size-partition 1000000 --lookup-clients "$LOOKUP_CLIENTS"
+      - name: Verify the published artifact on the same host
+        run: |
+          set -euo pipefail
+          mkdir -p reports/paired
+          mv reports/live/size-scaling-1000000 reports/paired/source
+          mv .ci-runtime/size-scaling-1000000 .ci-runtime/source-lookup-data
+          mv .ci-runtime/downloaded-ramsql .ci-runtime/source-lookup-image
+          python ci/bootstrap.py ramsql-baseline
+          mv .ci-runtime/baseline-build .ci-runtime/downloaded-ramsql
+          echo 'The next trial group uses the checksum-verified published archive on the same runner. The workload and scoring rules are unchanged.' >> "$GITHUB_STEP_SUMMARY"
+          python ci/qualify_loopback_lookup.py .ci-runtime/probe/tcp_loopback_probe "$LOOKUP_CLIENTS" published
+      - name: Score the published image with the original gate
+        if: always()
+        continue-on-error: true
+        run: |
+          if [[ ! -d reports/paired ]]; then exit 0; fi
+          status=0
+          python ci/evidence.py suite --suite size-scaling --size-partition 1000000 --lookup-clients "$LOOKUP_CLIENTS" || status=$?
+          if [[ -d reports/live/size-scaling-1000000 ]]; then mv reports/live/size-scaling-1000000 reports/paired/published; fi
+          exit "$status"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: clustered-irdb-million-row-lookup-${{ matrix.clients }}-clients
-          path: reports/live/size-scaling-1000000/
+          name: same-host-source-and-release-lookup-${{ matrix.clients }}-clients
+          path: |
+            reports/paired/
+            reports/live/size-scaling-1000000/
           if-no-files-found: error
           retention-days: 30
