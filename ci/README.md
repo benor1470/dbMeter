@@ -1,5 +1,10 @@
 # Live RAMSQL comparison
 
+See [the current requirement-to-gate map](REQUIREMENTS.md) for the full reviewer
+coverage and candidate. The original six-check JDBC example now also runs
+against RAMSQL and native PostgreSQL before timing, including rollback and a
+positive aggregate expectation replacing the documented alpha.2 gap assertion.
+
 This workflow runs the original dbMeter Java implementation, SQL, workload
 weights and independent expected CSVs against real RAMSQL, native PostgreSQL
 and IRDB servers. No Java engine, adapter or query implementation is replaced.

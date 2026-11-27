@@ -1,4 +1,4 @@
-name: Live RAMSQL opt-in cache diagnostic
+name: Live RAMSQL comparison
 
 on:
   push:
@@ -62,6 +62,21 @@ jobs:
         env:
           BUILD_VARIANT: ${{ matrix.variant }}
         run: python ci/bootstrap.py "$BUILD_VARIANT"
+      - uses: actions/setup-java@v4
+        if: matrix.variant == 'ramsql'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Require original JDBC lookups, updates, rollback and supported aggregates
+        if: matrix.variant == 'ramsql'
+        run: python ci/legacy_correctness.py
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.variant == 'ramsql'
+        with:
+          name: original-jdbc-correctness
+          path: reports/legacy/
+          if-no-files-found: error
+          retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.variant }}-benchmark-binary
