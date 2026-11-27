@@ -10,7 +10,7 @@ import subprocess
 import xml.etree.ElementTree as ET
 
 from bootstrap import ROOT, SIZE_PARTITIONS, VERSIONS, source_read_cache_bytes
-from live_benchmark import campaign_scope, cases, check_original_inputs, read_cache_admission, PROFILES, ENGINES
+from live_benchmark import campaign_scope, cases, check_original_inputs, read_cache_admission, irdb_index_tables, irdb_settings, PROFILES, ENGINES
 from runner import validate_ci, actions_context, validate_same_run
 
 SUITES = ('size-scaling', 'sales-subset', 'sales-full')
@@ -129,6 +129,12 @@ def summarize(folder, lookup_clients=None):
         issues.append('Campaign did not complete')
     if campaign.get('checks') != dict.fromkeys(ENGINES, True):
         issues.append('Original correctness checks did not pass for all three engines')
+    reference = campaign.get('irdb_reference', {})
+    if (not isinstance(reference, dict) or reference.get('pin') != VERSIONS['irdb']
+            or reference.get('clustered_indexes') != irdb_index_tables(suite)
+            or reference.get('settings') != irdb_settings().splitlines()
+            or reference.get('database') != 'live_' + suite.replace('-', '_') + '_clustered'):
+        issues.append('IRDB reference indexes/cache/vendor provenance missing or inconsistent')
     for engine in ENGINES:
         checks = ({f's{size}_{kind}' for size in (100, 512, 1000, 10000, 100000, 1000000) for kind in ('a_pk', 'b_filter', 'c_topn', 'd_last')}
                   if suite == 'size-scaling' else {'a_totals'} | MIXED[suite])

@@ -3,7 +3,7 @@
     "revision": "17f3301e244ec6d1662fc68a2a26081ecbff92d4",
     "url": "https://github.com/SB0LTD/ramsql/archive/17f3301e244ec6d1662fc68a2a26081ecbff92d4.tar.gz",
     "sha256": "221968482ed4aedaa1a36d4dfc3918c8f2d4f096b8b4be2c7028fc5dbcb52c2b",
-    "dependency_manifest_sha256": "0895f75fe3dc705444c5d7357397b85518485f17e2ca1aa7ba620e54b8e62051",
+    "dependency_manifest_sha256": "04cd2c191365af925c2ffcde9e334c4a9965ecddba7dfde443edae23eb52bd21",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,
@@ -64,14 +64,15 @@
   "irdb": {
     "version": "1.10.821",
     "url": "https://www.interactivereporting.com/irdb/irdb_core10.zip",
-    "sha256": "1cdcebfb5e0c0a2752affdeb8d84681dc6040227660602d3327c1eff0327f135"
+    "sha256": "1cdcebfb5e0c0a2752affdeb8d84681dc6040227660602d3327c1eff0327f135",
+    "subquery_cache": true
   },
   "postgres_image": "postgres:18.3-bookworm@sha256:80630f83606d8db77d30b3851b16a9f78be2d0d4dda6f7b82a1fdca5ebe3acba",
   "ramsql_baseline": {
     "revision": "17f3301e244ec6d1662fc68a2a26081ecbff92d4",
     "url": "https://github.com/SB0LTD/ramsql/archive/17f3301e244ec6d1662fc68a2a26081ecbff92d4.tar.gz",
     "sha256": "221968482ed4aedaa1a36d4dfc3918c8f2d4f096b8b4be2c7028fc5dbcb52c2b",
-    "dependency_manifest_sha256": "0895f75fe3dc705444c5d7357397b85518485f17e2ca1aa7ba620e54b8e62051",
+    "dependency_manifest_sha256": "04cd2c191365af925c2ffcde9e334c4a9965ecddba7dfde443edae23eb52bd21",
     "capacity_profile": {
       "tables": 32,
       "columns": 9,

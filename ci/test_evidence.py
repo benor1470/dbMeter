@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 
 import evidence
 from bootstrap import VERSIONS, source_read_cache_bytes
-from live_benchmark import PROFILES, ENGINES, cases, fresh_seed, read_cache_admission
+from live_benchmark import PROFILES, ENGINES, cases, fresh_seed, read_cache_admission, irdb_index_tables, irdb_settings
 from runner import actions_context, validate_same_run
 
 
@@ -49,6 +49,10 @@ class GateContracts(unittest.TestCase):
                              ramsql=dict(source=copy.deepcopy(source), binary_sha256=image_sha))
         if 'dependency_manifest_sha256' in source:
             self.campaign['ramsql']['dependency_manifest_sha256'] = source['dependency_manifest_sha256']
+        self.campaign['irdb_reference'] = dict(pin=copy.deepcopy(VERSIONS['irdb']),
+                                              clustered_indexes=irdb_index_tables('sales-subset'),
+                                              settings=irdb_settings().splitlines(),
+                                              database='live_sales_subset_clustered')
         cache_request = source_read_cache_bytes(source)
         if cache_request:
             self.pin_cache(cache_request)
@@ -279,6 +283,23 @@ class GateContracts(unittest.TestCase):
     def test_source_substitution_blocks_claim(self):
         self.campaign['ramsql']['source']['revision'] = 'd' * 40
         self.assertFalse(self.result()['qualified'])
+
+    def test_unindexed_or_differently_cached_reference_blocks_claim(self):
+        original = copy.deepcopy(self.campaign['irdb_reference'])
+        for key in ('pin', 'clustered_indexes', 'settings', 'database'):
+            with self.subTest(field=key):
+                self.campaign['irdb_reference'] = copy.deepcopy(original)
+                self.campaign['irdb_reference'].pop(key)
+                result = self.result()
+                self.assertFalse(result['qualified'])
+                self.assertIn('IRDB reference indexes/cache/vendor provenance missing or inconsistent',
+                              result['correctness_issues'])
+
+    def test_reference_indexes_cover_every_original_primary_key(self):
+        self.assertEqual(irdb_index_tables('size-scaling'),
+                         {f't_{size}': size for size in (100, 512, 1000, 10000, 100000, 1000000)})
+        self.assertEqual(irdb_index_tables('sales-full')['sales'], 5000000)
+        self.assertEqual(irdb_index_tables('sales-subset')['sales'], 1000000)
 
     def test_reviewer_input_substitution_blocks_correctness_and_claim(self):
         self.campaign['original_input_sha256']['unit-test-fixture'] = 'd' * 64

@@ -63,6 +63,22 @@ def integral_bank_words(spec, suite, table_slots):
     return configured
 
 
+def irdb_index_tables(suite):
+    if suite == 'size-scaling':
+        return {f't_{size}': size for size in SIZES}
+    if suite not in ('sales-subset', 'sales-full'):
+        raise ValueError('Unknown original suite')
+    return dict(zip(TABLES, (5, 200, 20, 1000, 50000,
+                            1000000 if suite == 'sales-subset' else 5000000)))
+
+
+def irdb_settings():
+    enabled = VERSIONS['irdb'].get('subquery_cache', True)
+    if type(enabled) is not bool:
+        raise ValueError('IRDB subquery cache policy must be boolean')
+    return f'nocache={str(not enabled).lower()}\nLogAll=false\n'
+
+
 def campaign_scope(suite, size_partition=None):
     if size_partition is None:
         return suite
@@ -313,7 +329,30 @@ class Campaign:
                 log.close()
 
     def irdb_settings(self):
-        return 'nocache=false\nLogAll=false\n'
+        return irdb_settings()
+
+    def prepare_irdb_indexes(self):
+        source = 'live_' + self.suite.replace('-', '_')
+        indexed = source + '_clustered'
+        tables = irdb_index_tables(self.suite)
+        classpath = os.pathsep.join(str(ROOT / f'drivers/{name}') for name in
+                                   ('jirdb-2025-02-02.jar', 'fastutil-8.5.15.jar'))
+        command = ['java', '-Xms32m', '-Xmx256m', '-cp', classpath,
+                   ROOT / 'ci/IrdbClusteredReference.java', str(self.port['irdb']), source, indexed,
+                   ','.join(f'{table}:{rows}' for table, rows in tables.items())]
+        with self.running('irdb'):
+            if self.command('irdb-clustered-index-setup', command):
+                raise RuntimeError('Vendor clustered index preparation or verification failed')
+        config = self.configs['irdb']
+        original = config.read_text()
+        old = f'jdbc:irdb://127.0.0.1:{self.port["irdb"]}/{source}'
+        if original.count(old) != 1:
+            raise ValueError('Expected exactly one original IRDB JDBC URL')
+        config.write_text(original.replace(old, old + '_clustered'))
+        self.report['irdb_reference'] = dict(pin=VERSIONS['irdb'], clustered_indexes=tables,
+                                             database=indexed, settings=self.irdb_settings().splitlines(),
+                                             setup_log='irdb-clustered-index-setup.log')
+        self.save()
 
     def prepare_configs(self):
         for engine in ENGINES:
@@ -416,6 +455,7 @@ class Campaign:
                         '--target', f'jdbc:irdb://127.0.0.1:{self.port["irdb"]}/live_{self.suite.replace("-", "_")}', '--tables', tables, '--chunk', '100000']
                 if self.command('irdb-copy', argv):
                     raise RuntimeError('Original IRDB transfer failed')
+        self.prepare_irdb_indexes()
         # Setup may have two databases resident; no timing occurs until both
         # stop. During timed runs only the selected engine is active.
         for engine in ('irdb', 'ramsql'):

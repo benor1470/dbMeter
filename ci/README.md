@@ -43,7 +43,10 @@ not permission to merge this PR or make a general README claim.**
   `IRDB_JDBC_PART_1` through `IRDB_JDBC_PART_5`, then SHA-256 checked. It is not
   committed, attached to a public release or included in result artifacts. The
   reviewer's private INI/password is never used: CI creates its own synthetic-data
-  server configuration with `nocache=true` and the vendor's public lab defaults.
+  server configuration with the cache policy pinned in `versions.json` and the
+  vendor's public lab defaults. The current reference uses `nocache=false`;
+  indexes and saved/reloaded table counts are verified before the original JDBC
+  checks and timing. The decision validates this reference provenance too.
 
 ## Testing the published RAMSQL binary
 
@@ -102,7 +105,8 @@ workers, and both references retain their normal engine settings.
 PostgreSQL uses Docker **host networking**, not a bridge/forwarded port: all
 three JDBC connections traverse the same host-loopback boundary. Earlier setup
 debug runs using a forwarded port are not qualifying performance evidence.
-RAMSQL's default text layout is used; no narrower binary is substituted to fit CI.
+RAMSQL's hosted release capacity profile is explicitly pinned in `versions.json`;
+no narrower binary is substituted to fit CI.
 These are memory-resident read comparisons, not a durable-write benchmark.
 
 Standard public Linux runners provide 16 GB RAM and four vCPUs; private runners

@@ -164,7 +164,7 @@ jobs:
           retention-days: 30
 
   advantage:
-    name: Compare the pinned cache configuration with formal thresholds
+    name: Significant advantage required before merge
     if: always() && !(github.event_name == 'workflow_dispatch' && inputs.paired_only)
     needs: [build, benchmark]
     runs-on: ubuntu-24.04
