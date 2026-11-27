@@ -1,0 +1,144 @@
+name: Qualify the published wider RAMSQL binary for PostgreSQL TLS and original lookups
+on:
+  push:
+    branches: [ci/published-wide-reply-cache-20261124]
+permissions:
+  contents: read
+  actions: read
+env:
+  RAMSQL_REVISION: c793d3fcd832763f0741a61021e40892cb71f707
+  ZPM_REVISION: 385d6708dfd03bf926fb92e826ebbf68fae611ab
+jobs:
+  indexed-tls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: SB0LTD/ramsql
+          ref: ${{ env.RAMSQL_REVISION }}
+          path: .ci-runtime/ramsql-source
+      - uses: actions/checkout@v4
+        with:
+          repository: SB0LTD/zpm
+          ref: ${{ env.ZPM_REVISION }}
+          path: .ci-runtime/probe-zpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install the attested RAMSQL prerelease and build the pure Sig socket map
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="$PWD/.ci-runtime/ramsql-source"
+          zpm="$PWD/.ci-runtime/probe-zpm"
+          test "$(git -C "$source" rev-parse HEAD)" = "$RAMSQL_REVISION"
+          test "$(git -C "$zpm" rev-parse HEAD)" = "$ZPM_REVISION"
+          python ci/bootstrap.py ramsql
+          python - <<'PY'
+          import sys
+          import tarfile
+          sys.path.insert(0, 'ci')
+          from bootstrap import RUNTIME, VERSIONS, download
+          with tarfile.open(download(VERSIONS['sig'], RUNTIME / 'sig.tar.xz')) as archive:
+              archive.extractall(RUNTIME / 'sdk', filter='data')
+          PY
+          sdk=$(find "$PWD/.ci-runtime/sdk" -type f -path '*/bin/sig')
+          runtime="$PWD/.ci-runtime/runtime"
+          python "$source/tools/prepare_sig_runtime.py" --installed-lib "${sdk%/bin/sig}/lib" --output "$runtime"
+          "$sdk" build-exe --zig-lib-dir "$runtime/lib" -target x86_64-linux-musl -mcpu=baseline -O ReleaseFast \
+            --dep tcp_loopback "-Mroot=$zpm/tools/tcp_loopback_probe.sig" \
+            "-Mtcp_loopback=$zpm/src/platform/tcp_loopback_linux.sig" -femit-bin="$RUNNER_TEMP/tcp_loopback_probe"
+          mkdir "$RUNNER_TEMP/evidence"
+          git -C "$zpm" rev-parse HEAD > "$RUNNER_TEMP/evidence/probe-zpm-revision"
+          sha256sum "$PWD/.ci-runtime/ramsql/bin/ramsql" "$RUNNER_TEMP/tcp_loopback_probe" > "$RUNNER_TEMP/evidence/sha256sums"
+          cp "$RUNNER_TEMP/evidence/probe-zpm-revision" "$RUNNER_TEMP/tcp_loopback_probe.revision"
+          sha256sum "$RUNNER_TEMP/tcp_loopback_probe" | cut -d ' ' -f 1 > "$RUNNER_TEMP/tcp_loopback_probe.sha256"
+      - name: Require scoped redirection and stock TLS qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          fi
+          python -m pip install -r .ci-runtime/ramsql-source/tools/requirements-test.txt
+          python ci/qualify_loopback_tls.py "$PWD/.ci-runtime/ramsql-source" \
+            "$PWD/.ci-runtime/ramsql/bin/ramsql" "$RUNNER_TEMP/tcp_loopback_probe" "$RUNNER_TEMP"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: indexed-loopback-tls-qualification
+          path: ${{ runner.temp }}/evidence/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loopback-probe
+          path: |
+            ${{ runner.temp }}/tcp_loopback_probe
+            ${{ runner.temp }}/tcp_loopback_probe.sha256
+            ${{ runner.temp }}/tcp_loopback_probe.revision
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ramsql-benchmark-binary
+          path: |
+            .ci-runtime/ramsql/bin/ramsql
+            .ci-runtime/ramsql-provenance.json
+          include-hidden-files: true
+          if-no-files-found: error
+  primary-key:
+    needs: indexed-tls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        clients: [1, 8]
+    env:
+      LOOKUP_CLIENTS: ${{ matrix.clients }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ramsql-benchmark-binary
+          path: .ci-runtime/downloaded-ramsql
+      - uses: actions/download-artifact@v4
+        with:
+          name: loopback-probe
+          path: .ci-runtime/probe
+      - name: Restore the supplied private IRDB Java client
+        env:
+          IRDB_JDBC_PART_1: ${{ secrets.IRDB_JDBC_PART_1 }}
+          IRDB_JDBC_PART_2: ${{ secrets.IRDB_JDBC_PART_2 }}
+          IRDB_JDBC_PART_3: ${{ secrets.IRDB_JDBC_PART_3 }}
+          IRDB_JDBC_PART_4: ${{ secrets.IRDB_JDBC_PART_4 }}
+          IRDB_JDBC_PART_5: ${{ secrets.IRDB_JDBC_PART_5 }}
+        run: python ci/bootstrap.py dependencies
+      - name: Build the unchanged dbMeter and IRDB adapter
+        run: sh build.sh
+      - name: Run the original JDBC case with the RAMSQL Linux loopback deployment
+        run: |
+          chmod 755 .ci-runtime/probe/tcp_loopback_probe
+          echo 'RAMSQL uses the indexed Linux socket map with bounded server reply caching for same-host peers only. PostgreSQL uses its original TCP deployment. IRDB uses the same JDBC path and the vendor clustered index on the lookup key. The lookup scoring rules are unchanged.' >> "$GITHUB_STEP_SUMMARY"
+          python ci/qualify_loopback_lookup.py .ci-runtime/probe/tcp_loopback_probe "$LOOKUP_CLIENTS"
+      - name: Score the original case and publish all timing results
+        if: always()
+        run: python ci/evidence.py suite --suite size-scaling --size-partition 1000000 --lookup-clients "$LOOKUP_CLIENTS"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clustered-irdb-million-row-lookup-${{ matrix.clients }}-clients
+          path: reports/live/size-scaling-1000000/
+          if-no-files-found: error
+          retention-days: 30

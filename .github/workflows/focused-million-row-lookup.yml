@@ -1,0 +1,79 @@
+name: Original one-million-row lookup against native references
+
+on:
+  push:
+    branches: [ci/readiness-to-reply-qualification-20261123]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate benchmark evidence tooling
+        run: python -m unittest discover -s ci -p 'test_*.py'
+      - name: Build the pinned RAMSQL candidate
+        run: python ci/bootstrap.py ramsql
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ramsql-benchmark-binary
+          path: |
+            .ci-runtime/ramsql/bin/ramsql
+            .ci-runtime/ramsql-provenance.json
+          if-no-files-found: error
+          retention-days: 14
+
+  primary-key:
+    needs: build
+    runs-on: ${{ vars.RAMSQL_BENCHMARK_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        clients: [1, 8]
+    env:
+      LOOKUP_CLIENTS: ${{ matrix.clients }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ramsql-benchmark-binary
+          path: .ci-runtime/downloaded-ramsql
+      - name: Restore the supplied private IRDB Java client
+        env:
+          IRDB_JDBC_PART_1: ${{ secrets.IRDB_JDBC_PART_1 }}
+          IRDB_JDBC_PART_2: ${{ secrets.IRDB_JDBC_PART_2 }}
+          IRDB_JDBC_PART_3: ${{ secrets.IRDB_JDBC_PART_3 }}
+          IRDB_JDBC_PART_4: ${{ secrets.IRDB_JDBC_PART_4 }}
+          IRDB_JDBC_PART_5: ${{ secrets.IRDB_JDBC_PART_5 }}
+        run: python ci/bootstrap.py dependencies
+      - name: Build the unchanged dbMeter and IRDB adapter
+        run: sh build.sh
+      - name: Run the original prepared JDBC lookup with all three engines
+        run: python ci/live_benchmark.py --suite size-scaling --profile qualification --size-partition 1000000 --lookup-clients "$LOOKUP_CLIENTS"
+      - name: Score the original case and publish all timing results
+        if: always()
+        run: python ci/evidence.py suite --suite size-scaling --size-partition 1000000 --lookup-clients "$LOOKUP_CLIENTS"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: original-million-row-lookup-${{ matrix.clients }}-clients
+          path: reports/live/size-scaling-1000000/
+          if-no-files-found: error
+          retention-days: 30

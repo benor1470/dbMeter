@@ -1,0 +1,188 @@
+name: Live RAMSQL comparison
+
+on:
+  push:
+    branches: [ci/published-wide-full-suite-20261124]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths: ['.github/workflows/ramsql-live-benchmarks.yml', 'ci/**', '!ci/README.md']
+  workflow_dispatch:
+    inputs:
+      qualification:
+        description: 'Three original-duration trials; required before any performance claim'
+        type: boolean
+        default: true
+      paired_only:
+        description: 'Run only the pinned same-runner diagnostic (no advantage decision)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-dbmeter-${{ github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.event.action }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.matrices.outputs.build }}
+      benchmark: ${{ steps.matrices.outputs.benchmark }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Select the build and benchmark matrices
+        id: matrices
+        env:
+          PAIRED_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.paired_only }}
+        run: python3 ci/bootstrap.py workflow-matrices >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.build) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test the evidence gate, including false-green cases
+        run: python -m unittest discover -s ci -p 'test_*.py' -v
+      - name: Install pinned RAMSQL benchmark binary
+        env:
+          BUILD_VARIANT: ${{ matrix.variant }}
+        run: python ci/bootstrap.py "$BUILD_VARIANT"
+      - uses: actions/setup-java@v4
+        if: matrix.variant == 'ramsql'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Require original JDBC lookups, updates, rollback and supported aggregates
+        if: matrix.variant == 'ramsql'
+        run: python ci/legacy_correctness.py
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.variant == 'ramsql'
+        with:
+          name: original-jdbc-correctness
+          path: reports/legacy/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.variant }}-benchmark-binary
+          path: |
+            .ci-runtime/${{ matrix.variant == 'ramsql-baseline' && 'baseline-build/' || '' }}ramsql/bin/ramsql
+            .ci-runtime/${{ matrix.variant == 'ramsql-baseline' && 'baseline-build/' || '' }}ramsql-provenance.json
+          include-hidden-files: true
+          retention-days: 14
+
+  benchmark:
+    needs: [plan, build]
+    # Set this variable to an existing larger Linux runner label for full-data
+    # qualification. Never silently downsize the reviewer's dataset to fit CI.
+    runs-on: ${{ vars.RAMSQL_BENCHMARK_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.benchmark) }}
+    env:
+      BENCHMARK_PROFILE: ${{ (github.event_name != 'workflow_dispatch' || inputs.qualification) && 'qualification' || 'smoke' }}
+      BENCHMARK_SIZE_PARTITION: ${{ matrix.size_partition || '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ramsql-benchmark-binary
+          path: .ci-runtime/downloaded-ramsql
+      - uses: actions/download-artifact@v4
+        if: matrix.kind == 'paired'
+        with:
+          name: ramsql-baseline-benchmark-binary
+          path: .ci-runtime/downloaded-baseline
+      - name: Restore the supplied private IRDB Java client
+        env:
+          IRDB_JDBC_PART_1: ${{ secrets.IRDB_JDBC_PART_1 }}
+          IRDB_JDBC_PART_2: ${{ secrets.IRDB_JDBC_PART_2 }}
+          IRDB_JDBC_PART_3: ${{ secrets.IRDB_JDBC_PART_3 }}
+          IRDB_JDBC_PART_4: ${{ secrets.IRDB_JDBC_PART_4 }}
+          IRDB_JDBC_PART_5: ${{ secrets.IRDB_JDBC_PART_5 }}
+        run: python ci/bootstrap.py dependencies
+      - name: Build the unchanged dbMeter and IRDB adapter
+        run: sh build.sh
+      - name: Live original JDBC checks and isolated comparisons
+        if: matrix.kind == 'live'
+        env:
+          BENCHMARK_SUITE: ${{ matrix.suite }}
+        run: |
+          partition=()
+          if [[ -n "$BENCHMARK_SIZE_PARTITION" ]]; then partition=(--size-partition "$BENCHMARK_SIZE_PARTITION"); fi
+          python ci/live_benchmark.py --suite "$BENCHMARK_SUITE" --profile "$BENCHMARK_PROFILE" "${partition[@]}"
+      - name: Selected original reads for optimization diagnostics, never merge qualification
+        if: matrix.kind == 'diagnostic'
+        env:
+          BENCHMARK_SUITE: ${{ matrix.suite }}
+        run: python ci/supported_benchmark.py --suite "$BENCHMARK_SUITE"
+      - name: Always publish the complete comparison, including losses and gaps
+        if: always() && matrix.kind == 'live'
+        env:
+          BENCHMARK_SUITE: ${{ matrix.suite }}
+        run: |
+          partition=()
+          if [[ -n "$BENCHMARK_SIZE_PARTITION" ]]; then partition=(--size-partition "$BENCHMARK_SIZE_PARTITION"); fi
+          python ci/evidence.py suite --suite "$BENCHMARK_SUITE" "${partition[@]}"
+      - name: Same-runner baseline/candidate AB BA AB comparison
+        if: matrix.kind == 'paired'
+        run: python ci/paired_benchmark.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.kind }}-${{ matrix.suite }}${{ matrix.size_partition && format('-{0}', matrix.size_partition) || '' }}
+          path: reports/live/${{ matrix.suite }}${{ matrix.size_partition && format('-{0}', matrix.size_partition) || '' }}/
+          if-no-files-found: error
+          retention-days: 30
+
+  advantage:
+    name: Significant advantage required before merge
+    if: always() && !(github.event_name == 'workflow_dispatch' && inputs.paired_only)
+    needs: [build, benchmark]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: live-*
+          path: reports/collected
+      - name: Require full correctness and a repeated significant advantage
+        run: python ci/evidence.py gate --root reports/collected
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: advantage-decision
+          path: reports/advantage*
+          retention-days: 30
